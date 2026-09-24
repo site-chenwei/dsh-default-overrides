@@ -1,0 +1,10 @@
+# Note: bundle owns installation and ready wiring — 见 .agents/notes/implemented/architecture/2026-09-24-distributable-dsh-bundle.md。
+# Keep this id for compatibility with existing file-based profiles.
+- insert:
+    - id: local-dsh-default-overrides
+      name: dsh-default-overrides
+      config: {}
+
+- id: preset-standard
+  inject:
+    - dshDefaultOverridesReady

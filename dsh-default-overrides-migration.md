@@ -2,7 +2,17 @@
 
 当前使用方式、配置项和验证命令见 [README](README.md)。本页说明旧版插件的升级接线及回退，运行时决定见 [修复记录](.agents/notes/implemented/bug-fix/2026-09-24-shell-channel-runtime-contracts.md)。
 
-## 部署文件
+## 从文件部署迁移到 bundle
+
+1. 备份现用 profile 补丁，保存旧入口的 `config`。从补丁中删除插入 `local-dsh-default-overrides` 的旧 `insert` 行；若旧命名仍在使用，也要移除对应活动入口。
+2. 按 [README 的安装步骤](README.md#安装)安装 GitHub/npm bundle。bundle 使用相同的 `local-dsh-default-overrides` ID，负责插入入口和 ready 接线。
+3. 将保存的配置改成[配置覆盖示例](examples/cordis.patch.yml)的形式：只有 `id` 和 `config`，去掉旧 `name: file://...`。`config` 整体替换，保留全部仍需使用的字段。
+4. 如果旧 profile 的 `preset-standard.inject` 只有 `dshDefaultOverridesReady`，可以删除这条用户层补丁，交给 bundle；若还有其他依赖，则保留完整依赖列表。ready 必须保留在最终合成结果中。
+5. 完整重启 DSH，新建 `standard` 会话。稳定后再移除不再使用的旧插件副本。
+
+不要同时启用文件入口与 bundle。停用或卸载时以整个 bundle 为单位，并清理对应用户层配置及手工 ready 依赖；仅禁用主插件行会让标准预设等不到 ready。回退到文件部署时，先停用 bundle，再恢复备份的两文件和用户补丁。
+
+## 保留文件部署
 
 同时部署 [主插件](scripts/dsh-default-overrides.mjs) 和 [Git Bash 适配器](scripts/gitbash-executor.mjs)，保持同目录。可以直接引用本仓库 `scripts/` 中的文件，也可以将两者复制到 DSH 的本地插件目录。一次性 `bash` 模式会按主插件位置加载适配器。
 
@@ -10,7 +20,7 @@
 
 备份实际使用的插件文件和 profile 配置。若旧文件已合并其他定制，在原文件上合并差异，不用基础版本整份覆盖。运行中的 DSH 可能监视配置修改，因此完成修改后仍需完整重启；若模型正在被修改的 DSH 中工作，先保存修改与重启交接信息，再从独立终端重启。
 
-将 [示例配置](examples/cordis.patch.yml) 合并到宿主 profile：
+将[文件部署示例](examples/file.cordis.patch.yml)合并到宿主 profile：
 
 - 只保留一个 `local-dsh-default-overrides` 活动入口；已有该条目时修改原条目。
 - `preset-standard.inject` 必须包含 `dshDefaultOverridesReady`，并保留它已有的其他依赖。

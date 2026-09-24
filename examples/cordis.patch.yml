@@ -1,16 +1,13 @@
-# Merge into your DSH host profile patch; replace paths with your actual locations.
-# Update an existing local-dsh-default-overrides entry instead of inserting a duplicate.
-- insert:
-    - id: local-dsh-default-overrides
-      name: 'file:///C:/Tools/dsh-default-overrides/scripts/dsh-default-overrides.mjs'
-      config:
-        shellMode: persistent-bash
-        bashPath: 'C:/Program Files/Git/bin/bash.exe'
-        pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'
-        timeoutMs: 300000
-        envContext: true
+# Merge into $DSH_HOME/profiles/<profile>/cordis.patch.yml AFTER bundle installation.
+# This updates the bundle-owned entry; do not insert a second plugin instance.
+# Replace the paths with your actual executables. macOS Bash example: /bin/bash.
+- id: local-dsh-default-overrides
+  config:
+    shellMode: persistent-bash
+    bashPath: 'C:/Program Files/Git/bin/bash.exe'
+    pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'
+    timeoutMs: 300000
+    envContext: true
 
-# Retain any other existing inject dependencies on preset-standard.
-- id: preset-standard
-  inject:
-    - dshDefaultOverridesReady
+# The bundle supplies preset-standard.inject. If another patch overrides inject,
+# retain dshDefaultOverridesReady alongside that patch's other dependencies.

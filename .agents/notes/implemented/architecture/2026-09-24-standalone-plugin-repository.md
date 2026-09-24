@@ -12,7 +12,7 @@ Status: implemented
 
 [README](../../../../README.md)、[宿主示例](../../../../examples/cordis.patch.yml)与[迁移说明](../../../../dsh-default-overrides-migration.md)提供独立部署入口。文档使用通用示例路径，不依赖原工作区绝对路径或其他项目文档。只迁入本插件所需交付，不附带原项目的站点、个人资料、宿主配置或安装包补丁。
 
-仓库默认采用 [MIT 许可证](../../../../LICENSE)。[package.json](../../../../package.json)仅提供无依赖的语法检查与验证命令；private 字段用于避免误发 npm，不限制 GitHub 开源。当前不增加构建系统、安装器、CI 或 npm 发布流程，也不设置 Git 远端。
+仓库默认采用 [MIT 许可证](../../../../LICENSE)。独立迁入阶段的 [package.json](../../../../package.json)仅提供无依赖的语法检查与验证命令，使用 private 字段避免误发 npm。用户新增分发要求后，[bundle 分发决定](2026-09-24-distributable-dsh-bundle.md)接管包清单与安装接线；独立历史、源码布局和不自动设置远端的决定继续成立。
 
 当前[运行契约修复笔记](../bug-fix/2026-09-24-shell-channel-runtime-contracts.md)迁入并保留问题、决定、备选方案与验证边界，仅调整出处及仓内链接。原项目其他历史笔记不整批导入。
 

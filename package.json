@@ -1,11 +1,51 @@
 {
   "name": "dsh-default-overrides",
-  "private": true,
+  "version": "0.1.0",
   "description": "Configurable Bash and PowerShell overrides for the DSH standard preset.",
   "type": "module",
   "license": "MIT",
+  "main": "./scripts/dsh-default-overrides.mjs",
+  "exports": {
+    ".": "./scripts/dsh-default-overrides.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "scripts/*.mjs",
+    "cordis.patch.yml",
+    "examples/",
+    "dsh-default-overrides-migration.md",
+    ".agents/notes/implemented/"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "bash",
+    "powershell"
+  ],
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": "0.1.7-rc.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
   "scripts": {
-    "check": "node --check scripts/dsh-default-overrides.mjs && node --check scripts/gitbash-executor.mjs && node --check scripts/verify-dsh-default-overrides.mjs",
-    "verify": "node scripts/verify-dsh-default-overrides.mjs"
+    "check": "node --check scripts/dsh-default-overrides.mjs && node --check scripts/gitbash-executor.mjs && node --check scripts/verify-dsh-default-overrides.mjs && node --check scripts/verify-package.mjs",
+    "verify": "node scripts/verify-dsh-default-overrides.mjs",
+    "verify:package": "npm run check && node scripts/verify-package.mjs",
+    "prepack": "npm run check"
   }
 }

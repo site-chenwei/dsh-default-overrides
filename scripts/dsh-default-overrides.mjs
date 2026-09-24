@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 
+// Note: 包根导出与 bundle 共用此入口，安装接线由补丁提供 — 见 .agents/notes/implemented/architecture/2026-09-24-distributable-dsh-bundle.md。
 export const name = 'dsh-default-overrides';
 export const inject = ['loader', 'agentPresets'];
 

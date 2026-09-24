@@ -1,0 +1,16 @@
+# Legacy file deployment only; do not combine with the installed bundle.
+# Replace the entry URL and executable paths with your actual locations.
+- insert:
+    - id: local-dsh-default-overrides
+      name: 'file:///C:/Tools/dsh-default-overrides/scripts/dsh-default-overrides.mjs'
+      config:
+        shellMode: persistent-bash
+        bashPath: 'C:/Program Files/Git/bin/bash.exe'
+        pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'
+        timeoutMs: 300000
+        envContext: true
+
+# Retain any other existing inject dependencies on preset-standard.
+- id: preset-standard
+  inject:
+    - dshDefaultOverridesReady
