@@ -76,7 +76,8 @@ const modules = Object.fromEntries(await Promise.all([
 
 // Real registry mounts the selector's emitted group. Unrelated standard tools are
 // omitted from this component fixture; this is not a complete GUI host acceptance.
-async function runtime(config) {
+async function runtime(config, options = {}) {
+  const presetId = options.presetId ?? 'standard';
   const root = await loaderContext();
   try {
     for (const name of ['dsh-agent', 'dsh-session-projection', 'dsh-subprocess-local']) await root.plugin(modules[name].default);
@@ -86,11 +87,20 @@ async function runtime(config) {
     await root.plugin(modules['dsh-jobs-local'].default);
     await root.plugin(modules['dsh-agent-preset-registry'].default, { default: 'standard' });
     const declaration = withReady(standard);
+    declaration.config.id = presetId;
     declaration.config.plugins = structuredClone(standard.config.plugins.filter(row => ['persona', 'tool-bash', 'tool-pwsh', 'tool-jobs', 'tool-web'].includes(row.id)));
     declaration.config.plugins.push({ id: 'tool-workflow', name: '@deepseek-ai/dsh-tool-workflow', disabled: true });
+    // 非 standard 预设拿不到本插件的行补丁（行补丁只作用于官方 standard），夹具直接在声明里禁用依赖未挂服务的行。
+    if (presetId !== 'standard') {
+      for (const row of declaration.config.plugins) if (row.id === 'tool-bash' || row.id === 'tool-web') row.disabled = true;
+    }
+    // 模拟 minimal 那样的预设级 persona 策略（complete / includeRuntimeContext）。
+    if (options.personaConfig !== undefined) {
+      declaration.config.plugins.find(row => row.id === 'persona').config = { ...options.personaConfig };
+    }
     await root.loader.root.update([{ id: 'system-prompt', name: '@deepseek-ai/dsh-system-prompt', config: { personaPrefix: '' }, inject: ['dshDefaultOverridesReady'] }, declaration, overrideRow(config)]);
     await settle(root);
-    const id = SessionId(`shell-verify-${config.shellMode}`);
+    const id = SessionId(`shell-verify-${presetId}-${config.shellMode ?? 'none'}`);
     const seed = Session.create(id);
     const session = Session.create(id, [], { ...seed.header, cwd: workspace });
     const agent = {
@@ -101,7 +111,7 @@ async function runtime(config) {
     };
     const scope = scopeModule.createScope(root, agent);
     agent.ctx = scope.ctx;
-    await root.agentPresets.mount(scope.ctx, 'standard');
+    await root.agentPresets.mount(scope.ctx, presetId);
     root.agents.register(agent);
     let call = 0;
     return {
@@ -353,13 +363,15 @@ try {
   // "工具表与基线逐字段相同"就是"未托管通道时提示词平面未被改写"的证据。
   const OFFICIAL_FREE = ['tool-web', 'tool-bash'];
   const environmentSection = assembly => assembly.contexts.find(section => section.name === 'local:dsh-default-overrides:environment');
-  async function environmentFacts(config) {
-    const harness = await runtime(config);
+  async function environmentFacts(config, options) {
+    const harness = await runtime(config, options);
     try {
       const assembly = await harness.assemble();
       return {
         section: environmentSection(assembly),
         context: modules['dsh-system-prompt'].renderContextSnapshot(assembly),
+        // 惰性：官方 persona 前缀含 {{model}}，夹具未注册该变量，只有覆盖过 persona 行的夹具才需要渲染系统提示词。
+        prompt: () => modules['dsh-system-prompt'].renderPrompt(assembly),
         tools: JSON.stringify(assembly.tools),
       };
     } finally { await harness.dispose(); }
@@ -378,7 +390,7 @@ try {
   const fallback = await environmentFacts({ disabledTools: OFFICIAL_FREE, shellMode: 'bash' });
   assert(fallback.section, 'officialBashFallback 下环境段必须仍然存在');
   assert.match(fallback.context, /Host platform: /);
-  assert.match(fallback.context, /host default for this platform; this plugin configured no shell/);
+  assert.match(fallback.context, /supplied by the active preset or the host default; this plugin configured no shell/);
   assert(fallback.context.includes(workspace));
   assert.doesNotMatch(fallback.context, /Shell mode: bash/, 'fallback 下不得冒充 bash 方言（Windows 上官方给的是 pwsh）');
   assert.doesNotMatch(fallback.context, /command deadline/, 'fallback 下 timeoutMs 不生效，不得声明截止时间');
@@ -404,6 +416,32 @@ try {
   assert.doesNotMatch(managedOneShot.context, /command deadline/, '一次性模式沿用官方等待与上限，不得声明本插件截止时间');
   assert.doesNotMatch(managedOneShot.context, /may have changed its own directory/, '一次性模式每次新 Shell，不需要 cwd 分叉提醒');
   assert.notEqual(managedOneShot.tools, bare.tools, '托管通道时才会补充工具说明与参数提示');
+
+  // 提示词钩子不再按预设名放行/拦截：未被打过行补丁的预设也拿到环境事实，但不得声明本插件没有配置的 Shell 通道。
+  const otherBaseline = await environmentFacts({ disabledTools: OFFICIAL_FREE }, { presetId: 'other' });
+  assert.equal(otherBaseline.section, undefined, '非 standard 预设下未配置 shellMode 时同样不贡献环境段');
+  for (const shellMode of ['bash', 'persistent-bash']) {
+    const facts = await environmentFacts({ disabledTools: OFFICIAL_FREE, shellMode }, { presetId: 'other' });
+    assert(facts.section, `${shellMode}: 非 standard 预设也必须拿到环境事实段`);
+    assert.match(facts.context, /Host platform: /);
+    assert(facts.context.includes(workspace), `${shellMode}: 非 standard 预设也必须给出工作区`);
+    assert.doesNotMatch(facts.context, /Shell mode: /, `${shellMode}: 行补丁没打过的预设不得声明通道`);
+    assert.doesNotMatch(facts.context, /command deadline/, `${shellMode}: 行补丁没打过的预设不得声明截止时间`);
+    assert.match(facts.context, /this plugin configured no shell/);
+    assert.equal(facts.tools, otherBaseline.tools, `${shellMode}: 行补丁没打过的预设不得改写工具说明`);
+  }
+  console.log('PASS: environment facts reach every preset without claiming a channel the plugin did not configure');
+
+  // 预设自己关掉运行时上下文时（minimal 的 persona 行就是 complete + includeRuntimeContext:false），
+  // 抑制是预设级硬事实，本插件的环境段与段落注入都不得把它顶回来。
+  const suppressed = await environmentFacts(
+    { disabledTools: OFFICIAL_FREE, shellMode: 'persistent-bash', envContext: true },
+    { presetId: 'other', personaConfig: { prefix: 'One line only.', complete: true, includeRuntimeContext: false } },
+  );
+  assert.equal(suppressed.section, undefined, '预设关闭运行时上下文时本插件的环境段必须同样被抑制');
+  assert.equal(suppressed.context, '', '预设关闭运行时上下文时快照必须为空');
+  assert.equal(suppressed.prompt().trim(), 'One line only.', 'complete 预设的系统提示词必须仍然是单句');
+  console.log('PASS: a preset that suppresses runtime context keeps its single-line prompt');
   console.log('PASS: environment facts stay correct across every shell-mode and envContext combination');
 
   const hiddenIdentity = await runtime({ shellMode: 'bash', bashPath, pwshPath, disabledTools: ['tool-web'], persona: { prefix: PERSONA, suffix: 'Verify persona suffix.' }, includeHarnessIdentity: false });

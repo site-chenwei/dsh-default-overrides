@@ -12,9 +12,9 @@
 - 通过 `disabledTools` 按行 ID 禁用 `standard` 中的任意插件行。
 - 通过 `persona` 固定或替换 `standard` 的 persona 文本，其余标准指引与运行时上下文照常组装。
 - 通过 `includeHarnessIdentity` 隐藏全局 `harness:identity` 段，只去掉一句框架身份说明。
-- 通过 `envContext` 补充环境事实段：平台与工作区始终给出，Shell 通道细节只在本插件确实接管该通道时给出。
+- 通过 `envContext` 补充环境事实段：平台与工作区对 profile 内每个预设的 agent 都给出，Shell 通道细节只在插件确实配置过该预设时给出。
 - 通过 `normalizeWindowsPaths` 在命令进入 Bash 前把 Windows 反斜杠路径改写为正斜杠。
-- 通过内存补丁调整官方 `standard` 预设，保留 `minimal` 和其他预设。
+- 通过内存补丁调整官方 `standard` 预设的行（persona、Shell、禁用清单），保留 `minimal` 与其他预设的行结构。
 
 未配置任何选项时，本插件不改变官方预设：不切换 Shell、不禁用任何工具行、不改 persona，也不隐藏身份段。
 
@@ -74,7 +74,10 @@ Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并�
 
 **两条路径都可省略。** 只写 `shellMode: persistent-bash` 时会用官方默认终端（`/bin/bash`）启动持久化会话；`persistent-pwsh` 省略 `pwshPath` 时由官方探测 PowerShell。一次性模式省略 `bashPath` 且未开启 `normalizeWindowsPaths` 时，插件完全不改官方 Shell 行，等于官方默认行为（Windows 上官方默认给出的是 pwsh）；省略 `bashPath` 但需要路径改写时，改写走官方默认的 `bash -c`。
 
-Shell 补丁与提示词平面互不牵连：**未接管通道时（含上述两种回退）插件不改官方工具说明，但环境事实段照常给出**——只声明平台、会话工作区，以及"通道由宿主默认提供、本插件未配置"。这样 Windows 上回退到官方 pwsh 时不会被误标成 bash，也不会声称本插件的 `timeoutMs` 生效。
+Shell 补丁、行补丁与提示词平面三者互不牵连：**行补丁只作用于官方 `standard` 预设**（它是本插件声明兼容的结构基线），而**提示词平面不按预设名过滤**——环境事实段对 profile 内每个预设的 agent 都贡献，只是**只有被行补丁配置过的预设**才声明 Shell 通道并补充工具说明。这样：
+
+- 未接管通道时（含一次性 bash 无路径回退到官方行）只声明平台、会话工作区，以及"通道由当前预设或宿主默认提供、本插件未配置"，不会在 Windows 回退到官方 pwsh 时被误标成 bash，也不会声称本插件的 `timeoutMs` 生效。
+- `minimal`、`ptc` 或自定义预设的会话照样拿到平台与工作区事实，但不会被塞进本插件配置的方言说明（那些预设的 Shell 由它们自己的行决定）。
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
@@ -86,7 +89,7 @@ Shell 补丁与提示词平面互不牵连：**未接管通道时（含上述两
 | `bashPath` | 未设置 | 可选。显式指定 Bash 可执行文件（Windows 上通常要指向 Git Bash）；省略时持久化模式用官方默认 `/bin/bash`，一次性模式在无需改写时保持官方行不动 |
 | `pwshPath` | 未设置 | 可选。建议显式填写以固定版本；省略时委托官方 PowerShell 探测 |
 | `timeoutMs` | `300000` | 正整数。持久化模式为命令截止时间；一次性模式沿用官方等待、后台处理与上限 |
-| `envContext` | 未设置（选了 `shellMode` 时按 `true`） | 是否向模型添加环境事实段：平台与工作区始终给出，Shell 通道细节（模式、可执行文件、参数语义、截止时间）只在本插件确实接管了该通道时给出。显式写 `true` 时即使未配置 Shell 也会贡献平台与工作区；显式写 `false` 不贡献该段但仍保留工具操作规则；什么都不配置时本插件零影响 |
+| `envContext` | 未设置（选了 `shellMode` 时按 `true`） | 是否向模型添加环境事实段：平台与工作区对每个预设都给出，Shell 通道细节（模式、可执行文件、参数语义、截止时间）只在行补丁确实配置过该预设时给出。显式写 `true` 时即使未配置 Shell 也会贡献平台与工作区；显式写 `false` 不贡献该段但仍保留工具操作规则；什么都不配置时本插件零影响 |
 
 `disabledTools` 按 `standard` 预设的行 ID 生效，包含分组内的行。常用 ID 有 `tool-web`、`tool-workflow`、`tool-ralph`、`skill-filesystem`；完整列表见安装中 `@deepseek-ai/dsh-web-app/presets/standard.patch.yml` 的 `config.plugins`。本插件只做 `disabled: true`，不改变这些行的其他配置。
 

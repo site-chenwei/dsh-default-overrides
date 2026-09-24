@@ -108,7 +108,7 @@ function shellGuidance(dialect) {
 function environmentContext({ managed, mode, persistent, timeoutMs, hasWorkspace }) {
   const lines = [managed
     ? `Host platform: ${process.platform}. Shell mode: ${mode}. Executable: {{dsh_overrides_shell_path}}.`
-    : `Host platform: ${process.platform}. Shell channel: the host default for this platform; this plugin configured no shell.`];
+    : `Host platform: ${process.platform}. Shell channel: supplied by the active preset or the host default; this plugin configured no shell.`];
   if (managed) {
     lines.push(persistent
       ? `Arguments: command only. Working directory, variables and functions persist while the shell stays alive. The command deadline is ${timeoutMs} ms; exit, timeout, cancellation or restart resets shell state.`
@@ -205,6 +205,8 @@ export async function apply(ctx, options = {}) {
     ctx.loader.import('@deepseek-ai/dsh-system-prompt'),
   ]);
   const patched = new WeakMap();
+  // 真正被本插件打过行补丁的预设 id：提示词平面据此判断"这个预设的 Shell 通道是否由本插件配置"，而不是按预设名判断。
+  const configuredPresets = new Set();
   let shimPath;
 
   function shellPatches() {
@@ -277,6 +279,7 @@ export async function apply(ctx, options = {}) {
     if (this.runtime?.callback === SystemPrompt) {
       return includeHarnessIdentity === undefined ? config : { ...config, includeHarnessIdentity };
     }
+    // 行补丁仍只作用于官方 standard 预设：它是本插件声明兼容的结构基线（persona 行、tool-bash/tool-pwsh 行、行 ID 清单都在那里）。
     if (this.runtime?.callback !== AgentPreset || config.id !== 'standard') return config;
     if (patched.has(config)) return patched.get(config);
     if (!shellEnabled && disabledTools.length === 0 && persona === undefined) return config;
@@ -299,6 +302,7 @@ export async function apply(ctx, options = {}) {
     };
     patched.set(config, result);
     patched.set(result, result);
+    configuredPresets.add(config.id);
     return result;
   }, { global: true });
 
@@ -307,9 +311,11 @@ export async function apply(ctx, options = {}) {
     ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
       const assembly = await next();
       const agent = context.agent;
-      if (!agent || ctx.agentPresets.composedPreset(agent.ctx) !== 'standard') return assembly;
+      if (!agent) return assembly;
+      // 不按预设名放行也不按预设名拦截：环境事实对每个 agent 都贡献，只有本插件确实给该预设打过行补丁时才声明 Shell 通道并改写工具说明。
+      const ownsChannel = managedShell && configuredPresets.has(ctx.agentPresets.composedPreset(agent.ctx));
       const workspace = agent.session.header.cwd;
-      const tools = managedShell
+      const tools = ownsChannel
         ? assembly.tools.map(tool => tool.name === dialect
           ? { ...tool, description: `${tool.description}\n\n${shellGuidance(dialect)}`, parameters: commandParameterHint(tool.parameters, dialect) }
           : tool)
@@ -318,7 +324,7 @@ export async function apply(ctx, options = {}) {
       const variables = { ...assembly.variables };
       if (workspace !== undefined) variables.dsh_overrides_workspace = workspace;
       // 只有本段真的引用 Shell 路径时才注册该变量，避免未接管通道时留下无载体的变量。
-      if (managedShell) variables.dsh_overrides_shell_path = shellPath ?? (dialect === 'bash' ? 'the official default bash (bashPath unset)' : 'auto-detected by the official PowerShell executor (pwshPath unset)');
+      if (ownsChannel) variables.dsh_overrides_shell_path = shellPath ?? (dialect === 'bash' ? 'the official default bash (bashPath unset)' : 'auto-detected by the official PowerShell executor (pwshPath unset)');
       return {
         ...assembly,
         tools,
@@ -327,7 +333,7 @@ export async function apply(ctx, options = {}) {
           ...assembly.contexts.filter(section => section.name !== ENVIRONMENT_SECTION),
           {
             name: ENVIRONMENT_SECTION,
-            text: environmentContext({ managed: managedShell, mode, persistent, timeoutMs, hasWorkspace: workspace !== undefined }),
+            text: environmentContext({ managed: ownsChannel, mode, persistent, timeoutMs, hasWorkspace: workspace !== undefined }),
           },
         ],
       };
