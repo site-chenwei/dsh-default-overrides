@@ -9,8 +9,10 @@
 - 四种 Shell 模式，每次只向模型暴露所选方言的一个 Shell 工具。
 - 两条可执行文件路径可以同时保留；显式路径会传给对应后端，路径无效直接报错。
 - 模型说明与工具参数一致，补充当前方言及禁止套用其他 Shell 的操作规则。
-- 默认禁用 `standard` 中的 `tool-web` 与 `tool-workflow` 行。
+- 通过 `disabledTools` 按行 ID 禁用 `standard` 中的任意插件行；不配置时不动官方预设。
 - 通过内存补丁调整官方 `standard` 预设，保留 `minimal` 和其他预设。
+
+未配置任何选项时，本插件不改变官方预设：既不切换 Shell，也不禁用任何工具行。
 
 | `shellMode` | 使用的路径 | 模型工具 | 状态 |
 |---|---|---|---|
@@ -37,18 +39,18 @@
 从 npm 安装：
 
 ```sh
-dsh plugin --profile web add dsh-default-overrides@0.1.0
+dsh plugin --profile web add dsh-default-overrides@0.2.0
 ```
 
 或从 GitHub 的版本标签安装：
 
 ```sh
-dsh plugin --profile web add 'github:YOUR_GITHUB_USER/dsh-default-overrides#v0.1.0'
+dsh plugin --profile web add 'github:YOUR_GITHUB_USER/dsh-default-overrides#v0.2.0'
 ```
 
 也可在 DSH 插件管理器中安装相同包规格。包内只有可直接加载的源码，没有 `prepare` / `postinstall` 脚本，无需批准本插件的依赖构建。
 
-安装后完整重启 DSH，再新建 `standard` 会话。**默认没有指定 Shell 模式**：保留官方 Shell 选择，同时禁用上面两条工具行。需要切换模式时添加下面的 profile 配置。
+安装后完整重启 DSH，再新建 `standard` 会话。**默认不改变官方预设**：既不切换 Shell，也不禁用工具行，需要哪些行为就在 profile 补丁里显式配置。
 
 自定义 profile 的 bundle 顺序必须让本插件位于提供 `preset-standard` 的 bundle 之后；正常 `web` profile 安装会自动追加。已有文件 URL 部署请先按[迁移说明](dsh-default-overrides-migration.md)移除旧插入行，避免重复实例。
 
@@ -65,17 +67,23 @@ macOS Bash 示例：
     bashPath: /bin/bash
     timeoutMs: 300000
     envContext: true
+    disabledTools:
+      - tool-web
+      - tool-workflow
 ```
 
 Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并同时保留 `pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'`。切换时只修改 `shellMode`。DSH 对匹配行的 `config` 做整体替换，因此要保留仍需使用的配置字段。
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| `shellMode` | 未设置 | 四种取值见上表；不设置时保留官方 Shell 选择，仍禁用上述两个工具行 |
+| `shellMode` | 未设置 | 四种取值见上表；不设置时保留官方 Shell 选择 |
+| `disabledTools` | `[]` | `standard` 预设中要禁用的行 ID 数组；ID 不存在时直接报错。不设置时不禁用任何行 |
 | `bashPath` | 未设置 | Bash 两模式必填，必须是存在的绝对文件路径 |
 | `pwshPath` | 未设置 | 建议显式填写以固定版本；未填写时委托官方 PowerShell 探测 |
 | `timeoutMs` | `300000` | 正整数。持久化模式为命令截止时间；一次性模式沿用官方等待、后台处理与上限 |
 | `envContext` | `true` | 是否向模型添加模式、配置路径和会话工作区；关闭后仍保留工具操作规则 |
+
+`disabledTools` 按 `standard` 预设的行 ID 生效，包含分组内的行。常用 ID 有 `tool-web`、`tool-workflow`、`tool-ralph`、`skill-filesystem`；完整列表见安装中 `@deepseek-ai/dsh-web-app/presets/standard.patch.yml` 的 `config.plugins`。本插件只做 `disabled: true`，不改变这些行的其他配置。
 
 只验证和使用当前模式对应的路径。一次性工具的前台等待超时可能将命令转为后台任务，并不等于杀死进程。配置后使用新会话验收，旧会话可能保留旧预设和 Shell 状态。
 
@@ -129,10 +137,10 @@ Windows Git Bash/ConPTY、PowerShell 真进程与完整 GUI/模型会话未在�
 
 1. 在自己的 GitHub 账号下创建仓库，设置 Git 远端。确定地址后，在 [package.json](package.json) 中补充 `repository`、`homepage`、`bugs`；当前没有预设他人账号。npm 名称默认为 `dsh-default-overrides`，发布前确认可用性和所有权；如果改名，同时修改 bundle 补丁中的 `name` 及文档命令。
 2. 运行上面的分发验证，然后执行 `npm pack --dry-run` 检查文件清单。白名单包含运行/验证脚本、补丁、示例和说明，不包含本地依赖及编辑器配置。
-3. 提交源码并创建与包版本一致的标签，例如 `git tag v0.1.0`，自行推送提交和标签到 GitHub。GitHub 用户可以直接安装该标签，不需要先发布 npm。
+3. 提交源码并创建与包版本一致的标签，例如 `git tag v0.2.0`，自行推送提交和标签到 GitHub。GitHub 用户可以直接安装该标签，不需要先发布 npm。
 4. 需要 npm 分发时，使用有权限的 npm 账号登录后执行 `npm publish`。`prepack` 会运行语法检查，发布不依赖本机 DSH 路径。
 
-本地也可运行 `npm pack`，再用 `dsh plugin --profile web add ./dsh-default-overrides-0.1.0.tgz` 安装产物。打出的压缩包不必提交到 Git。
+本地也可运行 `npm pack`，再用 `dsh plugin --profile web add ./dsh-default-overrides-0.2.0.tgz` 安装产物。打出的压缩包不必提交到 Git。
 
 分发设计见[bundle 决定](.agents/notes/implemented/architecture/2026-09-24-distributable-dsh-bundle.md)，迁入依据见[独立仓库决定](.agents/notes/implemented/architecture/2026-09-24-standalone-plugin-repository.md)。实现参考 [router-standard](https://github.com/yjh051108/dsh-routing-suite/tree/main/preset/router-standard) 和 [dsh-win32](https://github.com/sjh9714/dsh-win32/blob/00a9e0023883ffa4014203ba3932a1e697f52324/src/verify.ts)，执行契约以实际安装的 DSH 为准。
 

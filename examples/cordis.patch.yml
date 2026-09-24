@@ -8,6 +8,10 @@
     pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'
     timeoutMs: 300000
     envContext: true
+    # Standard preset row ids to disable; omit the key to keep every shipped row.
+    disabledTools:
+      - tool-web
+      - tool-workflow
 
 # The bundle supplies preset-standard.inject. If another patch overrides inject,
 # retain dshDefaultOverridesReady alongside that patch's other dependencies.

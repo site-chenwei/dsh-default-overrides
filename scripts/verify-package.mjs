@@ -53,7 +53,7 @@ try {
 
   // Exercise the documented user layer, then inspect the real DSH composition.
   writeFileSync(join(profileDir, 'cordis.patch.yml'), JSON.stringify([
-    { id: 'local-dsh-default-overrides', config: { shellMode: 'bash', bashPath } },
+    { id: 'local-dsh-default-overrides', config: { shellMode: 'bash', bashPath, disabledTools: ['tool-web'] } },
   ]));
   const profile = boot.loadProfileDirectory('dsh', profileDir, installAnchor);
   assert(profile.layers.some(layer => layer.packageName === manifest.name), 'bundle passes host compatibility and patch loading');
@@ -64,7 +64,7 @@ try {
   const standard = entries.find(row => row.id === 'preset-standard');
   assert.equal(entries.filter(row => row.id === entry.id).length, 1);
   assert.equal(entry.name, manifest.name);
-  assert.deepEqual(entry.config, { shellMode: 'bash', bashPath });
+  assert.deepEqual(entry.config, { shellMode: 'bash', bashPath, disabledTools: ['tool-web'] });
   assert(standard.inject.includes('dshDefaultOverridesReady'));
 
   const [{ Context }, { default: Loader, Group }] = await Promise.all([load('cordis'), load('cordis-plugin-loader')]);

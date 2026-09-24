@@ -2,6 +2,18 @@
 
 当前使用方式、配置项和验证命令见 [README](README.md)。本页说明旧版插件的升级接线及回退，运行时决定见 [修复记录](.agents/notes/implemented/bug-fix/2026-09-24-shell-channel-runtime-contracts.md)。
 
+## 从 0.1.0 升级到 0.2.0
+
+0.1.0 无条件禁用 `tool-web` 与 `tool-workflow`；0.2.0 改为配置项，不配置就保持官方预设原样。要保留原行为，在 profile 补丁的 `config` 中补上：
+
+```yaml
+    disabledTools:
+      - tool-web
+      - tool-workflow
+```
+
+`disabledTools` 取值为 `standard` 预设的行 ID。原本被禁用但现在不想保留的行直接从此列表删除即可；ID 写错会在启动时直接报错，不会静默失效。详细取舍见[可配置禁用清单决定](.agents/notes/implemented/feature/2026-09-24-configurable-disabled-tools.md)。
+
 ## 从文件部署迁移到 bundle
 
 1. 备份现用 profile 补丁，保存旧入口的 `config`。从补丁中删除插入 `local-dsh-default-overrides` 的旧 `insert` 行；若旧命名仍在使用，也要移除对应活动入口。

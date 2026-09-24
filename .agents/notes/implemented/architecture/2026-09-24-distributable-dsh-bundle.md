@@ -14,7 +14,7 @@ GitHub 标签与 npm 使用相同的已提交 `.mjs` 源码，无编译、prepar
 
 DSH 的实际 bundle 契约与 CLI 安装行为依据本机 `0.1.7-rc.1` 的 `dsh-app-boot`、`dsh-plugin-manager` 和 Loader 实现。DSH 根据 `peerDependencies` 检查宿主版本，因此声明精确 `0.1.7-rc.1`；optional 标记避免安装第二套宿主，官方模块仍通过 `ctx.loader.import` 复用。Node 最低声明采用已验证的 `24.15.0` 基线，不声称这是源码语法的最低要求；扩大版本范围前重跑验证。
 
-默认配置为空，保留现有“禁用 web/workflow、保留官方 Shell 选择”的行为。机器路径只放在用户 profile 补丁。bundle 必须位于提供 `preset-standard` 的层之后，文档和验证都使用官方 `web` profile；仅有 base 的新自定义 profile 不满足这一前提。
+[bundle 补丁](../../../../cordis.patch.yml)的默认 `config` 为空：不配置时插件不修改官方预设，Shell 通道和工具禁用清单都由使用者在 profile 层显式开启，禁用清单见[可配置禁用清单决定](../feature/2026-09-24-configurable-disabled-tools.md)。机器路径只放在用户 profile 补丁。bundle 必须位于提供 `preset-standard` 的层之后，文档和验证都使用官方 `web` profile；仅有 base 的新自定义 profile 不满足这一前提。
 
 用户配置通过[覆盖示例](../../../../examples/cordis.patch.yml)修改现有行。停用以整个 bundle 为单位，让主插件与 ready 等待同时退出；后续用户层若覆盖 `preset-standard.inject`，必须自行保留完整依赖列表。文件部署仍由[独立示例](../../../../examples/file.cordis.patch.yml)支持，迁移后只保留一个活动入口。
 

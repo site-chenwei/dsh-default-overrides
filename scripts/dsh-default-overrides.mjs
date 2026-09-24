@@ -5,10 +5,6 @@ import { isAbsolute } from 'node:path';
 export const name = 'dsh-default-overrides';
 export const inject = ['loader', 'agentPresets'];
 
-const DISABLED_TOOLS = [
-  { id: 'tool-web', name: '@deepseek-ai/dsh-tool-web', disabled: true },
-  { id: 'tool-workflow', name: '@deepseek-ai/dsh-tool-workflow', disabled: true },
-];
 const SHIPPED_SHELL_ROWS = [
   { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' },
   { id: 'tool-pwsh', name: '@deepseek-ai/dsh-tool-pwsh' },
@@ -44,8 +40,8 @@ function environmentContext(mode, persistent, timeoutMs, hasWorkspace) {
   ].join('\n');
 }
 
-/** 校验 standard 的替换目标；上游改结构时明确报错。 */
-function verifyShellRows(rows) {
+/** 拍平预设行，group 行自身也在结果中。 */
+function flattenRows(rows) {
   const flat = [];
   function visit(entries) {
     for (const row of entries) {
@@ -54,6 +50,11 @@ function verifyShellRows(rows) {
     }
   }
   visit(rows);
+  return flat;
+}
+
+/** 校验 standard 的 Shell 替换目标；上游改结构时明确报错。 */
+function verifyShellRows(flat) {
   for (const row of SHIPPED_SHELL_ROWS) {
     const matches = flat.filter(candidate => candidate.id === row.id);
     if (matches.length !== 1 || matches[0].name !== row.name) {
@@ -77,6 +78,11 @@ export async function apply(ctx, options = {}) {
   }
   if (options.blockNestedShells === true) {
     throw new Error('dsh-default-overrides: blockNestedShells PATH shims were removed; remove this option and fully restart DSH');
+  }
+  // Note: 禁用清单改由配置提供，默认不触碰官方工具行 — 见 .agents/notes/implemented/feature/2026-09-24-configurable-disabled-tools.md。
+  const disabledTools = options.disabledTools ?? [];
+  if (!Array.isArray(disabledTools) || disabledTools.some(id => typeof id !== 'string' || id.length === 0)) {
+    throw new Error('dsh-default-overrides: disabledTools must be an array of standard preset row ids');
   }
   const persistent = shellEnabled && mode.startsWith('persistent-');
   const dialect = mode === 'bash' || mode === 'persistent-bash' ? 'bash' : 'pwsh';
@@ -143,8 +149,19 @@ export async function apply(ctx, options = {}) {
     const config = next();
     if (this.runtime?.callback !== AgentPreset || config.id !== 'standard') return config;
     if (patched.has(config)) return patched.get(config);
-    if (shellEnabled) verifyShellRows(config.plugins);
-    const patches = shellEnabled ? [...DISABLED_TOOLS, ...shellPatches()] : DISABLED_TOOLS;
+    if (!shellEnabled && disabledTools.length === 0) return config;
+    const rows = flattenRows(config.plugins);
+    if (shellEnabled) verifyShellRows(rows);
+    // 上游行 ID 变化时明确报错，避免 applyEntryPatches 只留一条 warning 后静默不生效。
+    for (const id of disabledTools) {
+      if (!rows.some(row => row.id === id)) {
+        throw new Error(`dsh-default-overrides: disabledTools names ${JSON.stringify(id)}, which is not a row of the standard preset`);
+      }
+    }
+    const patches = [
+      ...disabledTools.map(id => ({ id, disabled: true })),
+      ...(shellEnabled ? shellPatches() : []),
+    ];
     const result = {
       ...config,
       plugins: applyEntryPatches(config.plugins, patches, (message, ...args) => ctx.logger.warn(message, ...args)),

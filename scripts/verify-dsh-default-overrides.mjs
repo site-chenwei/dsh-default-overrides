@@ -131,10 +131,13 @@ try {
     [{ shellMode: 'bash', bashPath, timeoutMs: -1 }, /positive safe integer/],
     [{ shellMode: 'bash', shellPath: bashPath }, /shellPath was split/],
     [{ shellMode: 'pwsh', blockNestedShells: true }, /PATH shims were removed/],
+    [{ disabledTools: 'tool-web' }, /disabledTools must be an array/],
+    [{ disabledTools: ['tool-web', 42] }, /disabledTools must be an array/],
+    [{ disabledTools: ['tool-missing'] }, /not a row of the standard preset/],
   ]) await assert.rejects(() => registeredPreset(config), pattern);
 
   for (const mode of ['persistent-bash', 'persistent-pwsh', 'bash', 'pwsh']) {
-    const config = await registeredPreset({ shellMode: mode, bashPath, pwshPath });
+    const config = await registeredPreset({ shellMode: mode, bashPath, pwshPath, disabledTools: ['tool-web', 'tool-workflow'] });
     const rows = flatten(config.plugins);
     const group = rows.find(row => row.id === GROUP_ID);
     const persistent = mode.startsWith('persistent-');
@@ -159,8 +162,13 @@ try {
   const custom = structuredClone(standard);
   custom.id = 'preset-other'; custom.config.id = 'other';
   assert.deepEqual(await registeredPreset({ shellMode: 'bash', bashPath }, custom), custom.config);
-  const noMode = await registeredPreset({ bashPath, pwshPath });
-  for (const id of ['tool-bash', 'tool-pwsh']) assert.deepEqual(noMode.plugins.find(row => row.id === id), standard.config.plugins.find(row => row.id === id));
+  // 未配置任何功能时必须原样放行官方预设：既不改 Shell，也没有默认禁用清单。
+  assert.deepEqual(await registeredPreset({ bashPath, pwshPath }), standard.config);
+  assert.deepEqual(await registeredPreset({}), standard.config);
+  const disableOnly = await registeredPreset({ disabledTools: ['tool-web', 'tool-workflow'] });
+  const disableRows = flatten(disableOnly.plugins);
+  for (const id of ['tool-web', 'tool-workflow']) assert.equal(disableRows.find(row => row.id === id).disabled, true);
+  for (const id of ['tool-bash', 'tool-pwsh', 'skill-filesystem']) assert.deepEqual(disableRows.find(row => row.id === id), standard.config.plugins.find(row => row.id === id));
   const sparse = structuredClone(standard);
   sparse.config.plugins = sparse.config.plugins.filter(row => ['tool-bash', 'tool-pwsh'].includes(row.id));
   await registeredPreset({ shellMode: 'bash', bashPath }, sparse);
@@ -178,7 +186,7 @@ try {
   console.log('PASS: actual preset registration, ready reload, all four path mappings, minimal/custom isolation, missing targets and no host mutation');
 
   for (const mode of ['bash', 'pwsh', 'persistent-bash', 'persistent-pwsh']) {
-    const harness = await runtime({ shellMode: mode, bashPath, pwshPath, timeoutMs: 10000 });
+    const harness = await runtime({ shellMode: mode, bashPath, pwshPath, timeoutMs: 10000, disabledTools: ['tool-web'] });
     const { root, agent } = harness;
     const persistent = mode.startsWith('persistent-');
     const dialect = mode.includes('bash') ? 'bash' : 'pwsh';
@@ -267,7 +275,7 @@ try {
     } finally { await harness.dispose(); }
   }
 
-  const noEnvironment = await runtime({ shellMode: 'bash', bashPath, pwshPath, envContext: false });
+  const noEnvironment = await runtime({ shellMode: 'bash', bashPath, pwshPath, envContext: false, disabledTools: ['tool-web'] });
   try {
     const assembly = await noEnvironment.assemble();
     assert(!assembly.contexts.some(section => section.name === 'local:dsh-default-overrides:environment'));
