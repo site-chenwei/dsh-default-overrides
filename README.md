@@ -23,7 +23,7 @@
 
 ## 安装
 
-1. 将仓库放到固定目录，或把 [主插件](dsh-default-overrides.mjs) 和 [Git Bash 适配器](gitbash-executor.mjs) 复制到同一目录。主插件按自身位置加载适配器。
+1. 将仓库放到固定目录，或把 [主插件](scripts/dsh-default-overrides.mjs) 和 [Git Bash 适配器](scripts/gitbash-executor.mjs) 复制到同一目录。主插件按自身位置加载适配器。
 2. 将下面的配置合并到实际 DSH profile 的宿主补丁中。已有本插件条目时修改原条目，已有 `inject` 依赖时合并保留。
 3. 按实际位置修改文件 URL 和 Shell 路径，完整重启 DSH，再新建 `standard` 会话。
 
@@ -32,7 +32,7 @@
 ```yaml
 - insert:
     - id: local-dsh-default-overrides
-      name: 'file:///C:/Tools/dsh-default-overrides/dsh-default-overrides.mjs'
+      name: 'file:///C:/Tools/dsh-default-overrides/scripts/dsh-default-overrides.mjs'
       config:
         shellMode: persistent-bash
         bashPath: 'C:/Program Files/Git/bin/bash.exe'
@@ -90,7 +90,7 @@ npm run verify -- `
   'C:/Program Files/PowerShell/7/pwsh.exe'
 ```
 
-[验证脚本](verify-dsh-default-overrides.mjs)使用安装树中的真实 Cordis Loader、预设注册表、工具、提示组装、Jobs、Subprocess 和终端后端，在临时 home/workspace 中检查：
+[验证脚本](scripts/verify-dsh-default-overrides.mjs)使用安装树中的真实 Cordis Loader、预设注册表、工具、提示组装、Jobs、Subprocess 和终端后端，在临时 home/workspace 中检查：
 
 - ready 等待、重载、预设作用范围和四模式路径传递；
 - 工具参数与环境说明、宿主环境保持不变；
@@ -108,7 +108,7 @@ Windows Git Bash/ConPTY、PowerShell 真进程与完整 GUI/模型会话尚未�
 
 ## 开发
 
-- 运行入口保持在仓库根目录，两个插件文件必须同目录部署。
+- 所有 JavaScript 脚本集中在 `scripts/`，两个插件文件必须同目录部署；npm 命令仍从仓库根目录运行。
 - 官方包通过宿主 Loader 解析；不在本仓库复制或另装一套 DSH 依赖。
 - 本仓库是插件后续维护位置；迁移来源和取舍见 [独立仓库决定](.agents/notes/implemented/architecture/2026-09-24-standalone-plugin-repository.md)。
 - [package.json](package.json) 的 `private: true` 仅避免误发 npm，不影响公开 GitHub 仓库。当前没有 npm 发布配置。

@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-// Usage: node verify-dsh-default-overrides.mjs <dsh-install-dir> <bash-path> [pwsh-path]
+// Usage: node scripts/verify-dsh-default-overrides.mjs <dsh-install-dir> <bash-path> [pwsh-path]
 // An omitted pwsh-path verifies wiring with a distinct executable, never claims live Pwsh acceptance.
 const [installation, bashPath, livePwshPath] = process.argv.slice(2);
-if (!installation || !bashPath) throw new Error('Usage: node verify-dsh-default-overrides.mjs <dsh-install-dir> <bash-path> [pwsh-path]');
+if (!installation || !bashPath) throw new Error('Usage: node scripts/verify-dsh-default-overrides.mjs <dsh-install-dir> <bash-path> [pwsh-path]');
 const requireDsh = createRequire(pathToFileURL(join(installation, 'package.json')).href);
 const load = name => import(pathToFileURL(requireDsh.resolve(`@deepseek-ai/${name}`)).href);
 const [{ Context }, { default: Loader, Group }, { entryListSchema }, yaml, { Session, SessionId }, scopeModule] = await Promise.all([

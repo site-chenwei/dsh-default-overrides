@@ -10,9 +10,9 @@ Status: implemented
 
 ## Decision
 
-[主插件](../../../../dsh-default-overrides.mjs)恢复标准预设对 dshDefaultOverridesReady 的依赖，钩子就绪后才发布服务。仅覆盖 standard，传入 warn 回调，保留其他预设和延迟表达式。
+[主插件](../../../../scripts/dsh-default-overrides.mjs)恢复标准预设对 dshDefaultOverridesReady 的依赖，钩子就绪后才发布服务。仅覆盖 standard，传入 warn 回调，保留其他预设和延迟表达式。
 
-[Git Bash 适配器](../../../../gitbash-executor.mjs)继承官方 LocalBashExecutor，仅把 argv 改为配置路径与 -lc；超时、取消、输出、后台观察和失败传播使用官方 executeArgv。适配器声明 loader/subprocess 依赖；一次性 Pwsh 与持久化两模式继续使用官方实现。
+[Git Bash 适配器](../../../../scripts/gitbash-executor.mjs)继承官方 LocalBashExecutor，仅把 argv 改为配置路径与 -lc；超时、取消、输出、后台观察和失败传播使用官方 executeArgv。适配器声明 loader/subprocess 依赖；一次性 Pwsh 与持久化两模式继续使用官方实现。
 
 bashPath/pwshPath 可以并存，严格选择当前家族的路径，仅校验当前路径。显式路径错误直接失败，不跨家族或静默探测替换。Bash 路径必填，Pwsh 仅在未配置路径时委托官方探测；下游各自的 shellPath/pwshPath 配置键不改变。
 
@@ -36,7 +36,7 @@ bashPath/pwshPath 可以并存，严格选择当前家族的路径，仅校验�
 
 ## Testing
 
-[验证脚本](../../../../verify-dsh-default-overrides.mjs)在隔离的临时 home/workspace 使用本机安装组件通过以下针对性检查，没有新增测试依赖：
+[验证脚本](../../../../scripts/verify-dsh-default-overrides.mjs)在隔离的临时 home/workspace 使用本机安装组件通过以下针对性检查，没有新增测试依赖：
 
 - 真实 AgentPreset.register 收到已覆盖声明；standard 先声明仍等 ready；配置重载只插入一组；minimal/custom 原样；可选目标缺失不崩溃；官方文件字节保持。
 - 实际预设注册表挂载 Shell 子树、绑定 agent，真实工具注册表/SystemPrompt 验证四模式工具名、必填参数、准确方言说明与环境段。两路径共存，所选路径逐一到达 subprocess spawn 接口；宿主环境不变。

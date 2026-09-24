@@ -4,7 +4,9 @@
 
 ## 部署文件
 
-同时部署 [主插件](dsh-default-overrides.mjs) 和 [Git Bash 适配器](gitbash-executor.mjs)，保持同目录。可以直接引用本仓库中的文件，也可以将两者复制到 DSH 的本地插件目录。一次性 `bash` 模式会按主插件位置加载适配器。
+同时部署 [主插件](scripts/dsh-default-overrides.mjs) 和 [Git Bash 适配器](scripts/gitbash-executor.mjs)，保持同目录。可以直接引用本仓库 `scripts/` 中的文件，也可以将两者复制到 DSH 的本地插件目录。一次性 `bash` 模式会按主插件位置加载适配器。
+
+如果宿主配置此前直接引用仓库根目录的入口，将文件 URL 改为 `.../scripts/dsh-default-overrides.mjs`；复制到独立插件目录的部署仍只需保证两个插件文件同目录。
 
 备份实际使用的插件文件和 profile 配置。若旧文件已合并其他定制，在原文件上合并差异，不用基础版本整份覆盖。运行中的 DSH 可能监视配置修改，因此完成修改后仍需完整重启；若模型正在被修改的 DSH 中工作，先保存修改与重启交接信息，再从独立终端重启。
 
@@ -25,7 +27,7 @@
 | `standardPersistentGitBashReady` | 发布方和 `preset-standard.inject` 一起改为 `dshDefaultOverridesReady` |
 | 公共 `shellPath` | Bash 家族改为 `bashPath`，Pwsh 家族改为 `pwshPath`，显式配置 `shellMode`；旧键会报告迁移错误 |
 | 两路径互斥 | 现在允许并存，仅使用和验证当前家族的路径 |
-| 只部署主插件 | 补齐同目录的 [Git Bash 适配器](gitbash-executor.mjs) |
+| 只部署主插件 | 补齐同目录的 [Git Bash 适配器](scripts/gitbash-executor.mjs) |
 | `blockNestedShells: true` | 删除此配置；本版本明确拒绝旧启用项，`false` 可作为无操作的旧配置保留 |
 | 全局 PATH shim | 本版本不再创建或注入；完整重启旧 DSH，清除旧进程内存中的 PATH 前缀 |
 
@@ -37,7 +39,7 @@
 
 ## 验收
 
-先运行 `npm run check`，再按 [README 的验证命令](README.md#验证) 执行 [针对性脚本](verify-dsh-default-overrides.mjs)。这些命令不安装新依赖、不修改宿主 profile；测试使用临时 home/workspace 和已安装 DSH 的组件。
+先运行 `npm run check`，再按 [README 的验证命令](README.md#验证) 执行 [针对性脚本](scripts/verify-dsh-default-overrides.mjs)。这些命令不安装新依赖、不修改宿主 profile；测试使用临时 home/workspace 和已安装 DSH 的组件。
 
 目标机重启后，从 DSH 的实际模型工具入口核对：
 

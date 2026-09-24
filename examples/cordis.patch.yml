@@ -2,7 +2,7 @@
 # Update an existing local-dsh-default-overrides entry instead of inserting a duplicate.
 - insert:
     - id: local-dsh-default-overrides
-      name: 'file:///C:/Tools/dsh-default-overrides/dsh-default-overrides.mjs'
+      name: 'file:///C:/Tools/dsh-default-overrides/scripts/dsh-default-overrides.mjs'
       config:
         shellMode: persistent-bash
         bashPath: 'C:/Program Files/Git/bin/bash.exe'
