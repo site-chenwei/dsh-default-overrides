@@ -86,7 +86,7 @@ async function runtime(config, options = {}) {
     await root.plugin(modules['dsh-shell-env'], { dshHome: scratch });
     await root.plugin(modules['dsh-jobs-local'].default);
     await root.plugin(modules['dsh-agent-preset-registry'].default, { default: 'standard' });
-    const declaration = withReady(standard);
+    const declaration = options.readyInject === false ? structuredClone(standard) : withReady(standard);
     declaration.config.id = presetId;
     declaration.config.plugins = structuredClone(standard.config.plugins.filter(row => ['persona', 'tool-bash', 'tool-pwsh', 'tool-jobs', 'tool-web'].includes(row.id)));
     declaration.config.plugins.push({ id: 'tool-workflow', name: '@deepseek-ai/dsh-tool-workflow', disabled: true });
@@ -465,6 +465,17 @@ try {
     [{ personaPresets: ['other'] }, /personaPresets only widens the persona row patch/],
   ]) await assert.rejects(() => registeredPreset(config), pattern);
   console.log('PASS: personaPresets widens only the persona row — listed presets inherit the configured prefix, others keep their own');
+
+  // 行补丁在 internal/config 阶段生效：预设行没等到本插件就绪时，它的 config 已经解析完，补丁静默丢失。
+  // 这不是夹具假想——真实 preset-ptc/preset-cordis 行原本就没有这条 inject，ptc 会话拿到的是官方前缀。
+  // 因此 bundle 必须为每个可能被 patch 的预设行加 dshDefaultOverridesReady（接线断言见 verify-package.mjs）。
+  const unready = await runtime({ disabledTools: OFFICIAL_FREE, persona: { prefix: SHARED_PERSONA }, personaPresets: ['standard', 'other'] }, { presetId: 'other', readyInject: false });
+  try {
+    const texts = sectionTexts(await unready.assemble());
+    assert(texts.includes(INHERITED_PERSONA), '未等待 ready 的预设保留官方 prefix');
+    assert(!texts.includes(SHARED_PERSONA), '未等待 ready 的预设拿不到 persona 行补丁');
+  } finally { await unready.dispose(); }
+  console.log('PASS: the ready gate is load-bearing — a preset row that does not wait for the plugin never receives the persona patch');
 
   const hiddenIdentity = await runtime({ shellMode: 'bash', bashPath, pwshPath, disabledTools: ['tool-web'], persona: { prefix: PERSONA, suffix: 'Verify persona suffix.' }, includeHarnessIdentity: false });
   try {

@@ -67,6 +67,12 @@ try {
   assert.equal(entry.name, manifest.name);
   assert.deepEqual(entry.config, { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], persona: { prefix: 'You are a helpful software engineer assistant.' } });
   assert(standard.inject.includes('dshDefaultOverridesReady'));
+  // 每个可能被 persona 行补丁命中的预设行都必须等到本插件就绪：缺一条 inject，那个预设就静默拿不到人设。
+  for (const id of ['preset-standard', 'preset-ptc', 'preset-cordis', 'preset-minimal']) {
+    const preset = entries.find(row => row.id === id);
+    assert(preset, `the shipped web profile must declare ${id}`);
+    assert(preset.inject?.includes('dshDefaultOverridesReady'), `the bundle patch must gate ${id}`);
+  }
 
   const [{ Context }, { default: Loader, Group }] = await Promise.all([load('cordis'), load('cordis-plugin-loader')]);
   const root = new Context();

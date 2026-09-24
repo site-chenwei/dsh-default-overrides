@@ -107,6 +107,8 @@ Shell 补丁、行补丁与提示词平面三者互不牵连：**行补丁只作
 
 `personaPresets` 让同一份人设覆盖多个同构预设（官方 `standard`、`ptc`、`cordis` 的 persona 行结构一致）。写出 `ptc` 或 `cordis` 不会带来 `standard` 的 Shell 覆盖与行 ID 清单，那些改动仍只作用于 `standard`。刻意排除 `minimal`：它的 persona 行是 `complete: true` + `includeRuntimeContext: false`，而本插件会显式写入 `complete: false` + `includeRuntimeContext: true`，列进去等于把它从单句提示词改回普通会话。列出的预设若被上游改了 persona 行结构，启动时直接报错；写错预设 id 不会报错（宿主不提供可枚举的预设清单），只是那个预设静默拿不到人设。
 
+行补丁在 `internal/config` 阶段生效，因此**被列出的预设行必须先等到本插件就绪**。[bundle 补丁](cordis.patch.yml)已为 `preset-standard`、`preset-ptc`、`preset-cordis`、`preset-minimal` 各加一条 `dshDefaultOverridesReady`；若把**自建预设**列进 `personaPresets`，要自己在那条行上补同样的 `inject`，否则插件钩子尚未注册、该预设的 config 已经解析完，补丁会被静默丢弃。
+
 `includeHarnessIdentity` 作用于**全局** `system-prompt` 行（`dsh-base` 声明），而不是 `standard` 预设的 persona 行，因此影响该 profile 的所有预设与会话。写 `false` 只让模型少收到 `harness:identity` 这一段 `You are an AI agent powered by DeepSeek Harness.`，模型与 API、工具注册、Shell、团队/Goal/Workflow、沙箱与审批都不受影响；计划模式指引、工具说明、persona 与运行时上下文照常组装。本插件复用宿主 `@deepseek-ai/dsh-system-prompt` 的官方开关，不新造隐藏机制。
 
 该选项要生效，全局 `system-prompt` 行必须在插件就绪后再解析配置，因此 [bundle 补丁](cordis.patch.yml)为该行添加了 `dshDefaultOverridesReady` 等待。用户层若覆盖了该行的 `inject`，同样要保留这个信号。不使用该选项时这条等待仍然存在，代价只是启动顺序上的一次等待。
