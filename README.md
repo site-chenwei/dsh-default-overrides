@@ -2,7 +2,7 @@
 
 为 DeepSeek Harness（DSH）的 `standard` 预设做可配置覆盖：选择 Bash / PowerShell 执行通道，并按需禁用预设行、固定 persona、隐藏框架身份说明。所有改动都只作用于内存中的预设配置，不修改 DSH 安装包。
 
-四种 Shell 模式复用宿主官方执行器与工具；其余选项通过行补丁改写官方 `standard` 预设。这是可通过 GitHub 或 npm 安装的 DSH **bundle 插件**：源码直接运行，无需编译或安装脚本，DSH 从 [package.json](package.json) 的 `dsh.bundle.patch` 读取[插件补丁](cordis.patch.yml)，自动完成插件插入与 ready 接线。
+四种 Shell 模式复用宿主官方执行器与工具；其余选项通过行补丁改写官方 `standard` 预设。这是通过 npm 安装的 DSH **bundle 插件**：源码直接运行，无需编译或安装脚本，DSH 从 [package.json](package.json) 的 `dsh.bundle.patch` 读取[插件补丁](cordis.patch.yml)，自动完成插件插入与 ready 接线。
 
 ## 功能范围
 
@@ -36,21 +36,13 @@
 
 ## 安装
 
-`YOUR_GITHUB_USER` 替换为实际 GitHub 所有者，`web` 替换为实际使用的 profile。首次安装会把 bundle 自动加入该 profile 的 `dsh.profile.bundles`。
-
-从 npm 安装最新版本：
+`web` 替换为实际使用的 profile。首次安装会把 bundle 自动加入该 profile 的 `dsh.profile.bundles`：
 
 ```sh
 dsh plugin --profile web add dsh-default-overrides
 ```
 
-或从 GitHub 的版本标签安装（标签与 [package.json](package.json) 的版本一致）：
-
-```sh
-dsh plugin --profile web add 'github:YOUR_GITHUB_USER/dsh-default-overrides#v0.2.0'
-```
-
-也可在 DSH 插件管理器中安装相同包规格。包内只有可直接加载的源码，没有 `prepare` / `postinstall` 脚本，无需批准本插件的依赖构建。
+需要固定版本时在包名后追加 `@版本`。也可在 DSH 插件管理器中安装相同包规格。包内只有可直接加载的源码，没有 `prepare` / `postinstall` 脚本，无需批准本插件的依赖构建。
 
 安装后完整重启 DSH，再新建 `standard` 会话。**默认不改变官方预设**：既不切换 Shell，也不禁用工具行、不改 persona、不隐藏身份段，需要哪些行为就在 profile 补丁里显式配置。
 
@@ -113,7 +105,7 @@ bundle 已为 `preset-standard` 添加 `dshDefaultOverridesReady`。如果用户
 
 ## 更新、停用与文件部署
 
-- 更新时对同一 profile 执行 `add`，指定新 npm 版本或 GitHub 标签，然后完整重启 DSH。
+- 更新时对同一 profile 执行 `add` 并指定新版本，然后完整重启 DSH。
 - 在插件管理器中以**整个 bundle**为单位停用；仅禁用主插件行会让 `standard` 等不到 ready。卸载可执行 `dsh plugin --profile web remove dsh-default-overrides`。
 - 停用或卸载时，删除用户层针对 `local-dsh-default-overrides` 的配置；若旧部署手工添加过 ready 依赖，也要仅移除该依赖并保留其他依赖。
 - 仍支持直接文件部署，使用 [examples/file.cordis.patch.yml](examples/file.cordis.patch.yml)，同时部署[主插件](scripts/dsh-default-overrides.mjs)和同目录[适配器](scripts/gitbash-executor.mjs)。文件入口与 bundle 二选一。
@@ -151,16 +143,9 @@ npm run verify:package -- `
 
 本机验证环境为 macOS、Node.js 24.15.0、DSH 0.1.7-rc.1。该 DSH 安装含既有 Bash marker 修复，本仓库不附带或修改宿主补丁，详见[运行契约记录](.agents/notes/implemented/bug-fix/2026-09-24-shell-channel-runtime-contracts.md)。
 
-Windows Git Bash/ConPTY、PowerShell 真进程与完整 GUI/模型会话未在此环境实测。声明精确版本也不构成对未修改 DSH 安装的完整兼容证明。实际 GitHub 拉取及 npm registry 安装须在发布后验证。
+Windows Git Bash/ConPTY、PowerShell 真进程与完整 GUI/模型会话未在此环境实测。声明精确版本也不构成对未修改 DSH 安装的完整兼容证明。
 
-## 发布
-
-1. 在自己的 GitHub 账号下创建仓库，设置 Git 远端。确定地址后，在 [package.json](package.json) 中补充 `repository`、`homepage`、`bugs`；当前没有预设他人账号。npm 名称默认为 `dsh-default-overrides`，发布前确认可用性和所有权；如果改名，同时修改 bundle 补丁中的 `name` 及文档命令。
-2. 运行上面的分发验证，然后执行 `npm pack --dry-run` 检查文件清单。白名单包含运行/验证脚本、补丁、示例和说明，不包含本地依赖及编辑器配置。
-3. 提交源码并创建与包版本一致的标签，例如 `git tag v0.2.0`，自行推送提交和标签到 GitHub。GitHub 用户可以直接安装该标签，不需要先发布 npm。
-4. 需要 npm 分发时，使用有权限的 npm 账号登录后执行 `npm publish`。`prepack` 会运行语法检查，发布不依赖本机 DSH 路径。
-
-本地也可运行 `npm pack` 打出 tarball，再用 `dsh plugin --profile web add ./dsh-default-overrides-<版本>.tgz` 安装产物。打出的压缩包不必提交到 Git。
+## 参考
 
 分发设计见[bundle 决定](.agents/notes/implemented/architecture/2026-09-24-distributable-dsh-bundle.md)，迁入依据见[独立仓库决定](.agents/notes/implemented/architecture/2026-09-24-standalone-plugin-repository.md)。实现参考 [router-standard](https://github.com/yjh051108/dsh-routing-suite/tree/main/preset/router-standard) 和 [dsh-win32](https://github.com/sjh9714/dsh-win32/blob/00a9e0023883ffa4014203ba3932a1e697f52324/src/verify.ts)，执行契约以实际安装的 DSH 为准。
 

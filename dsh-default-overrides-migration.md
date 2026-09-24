@@ -21,7 +21,7 @@ bundle 会为全局 `system-prompt` 行添加 `dshDefaultOverridesReady` 等待�
 ## 从文件部署迁移到 bundle
 
 1. 备份现用 profile 补丁，保存旧入口的 `config`。从补丁中删除插入 `local-dsh-default-overrides` 的旧 `insert` 行；若旧命名仍在使用，也要移除对应活动入口。
-2. 按 [README 的安装步骤](README.md#安装)安装 GitHub/npm bundle。bundle 使用相同的 `local-dsh-default-overrides` ID，负责插入入口和 ready 接线。
+2. 按 [README 的安装步骤](README.md#安装)安装 npm bundle。bundle 使用相同的 `local-dsh-default-overrides` ID，负责插入入口和 ready 接线。
 3. 将保存的配置改成[配置覆盖示例](examples/cordis.patch.yml)的形式：只有 `id` 和 `config`，去掉旧 `name: file://...`。`config` 整体替换，保留全部仍需使用的字段。
 4. 如果旧 profile 的 `preset-standard.inject` 只有 `dshDefaultOverridesReady`，可以删除这条用户层补丁，交给 bundle；若还有其他依赖，则保留完整依赖列表。ready 必须保留在最终合成结果中。
 5. 完整重启 DSH，新建 `standard` 会话。稳定后再移除不再使用的旧插件副本。
