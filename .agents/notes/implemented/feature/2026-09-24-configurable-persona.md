@@ -13,6 +13,7 @@ Status: implemented
 - `prefix`、`suffix`：只覆盖写出的字段，未写的沿用当前值（官方 suffix `Your working directory is {{cwd}}.` 因此保留）。
 - `complete`：未写时报文写入 `false`，避免上游或前序补丁把整个系统提示词锁成单句。
 - `includeRuntimeContext`：未写时报文写入 `true`，本次不抑制运行时上下文。
+- 作用范围默认仍是 `standard`；同构的其他预设（`ptc`、`cordis`）可由 `personaPresets` 显式列入 — 见 [persona 跨预设](2026-09-25-persona-across-presets.md)。
 - 未设置 `persona` 时不产生任何补丁，`standard` 原样放行。
 
 行结构在挂载前校验：必须恰好一行 `persona`、包名为 `@deepseek-ai/dsh-persona`、`config.prefix` 为字符串，否则报错。这既拦住上游改结构，也拦住把字段写成旧示例里的 `text`。

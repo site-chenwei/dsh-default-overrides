@@ -444,6 +444,28 @@ try {
   console.log('PASS: a preset that suppresses runtime context keeps its single-line prompt');
   console.log('PASS: environment facts stay correct across every shell-mode and envContext combination');
 
+  // personaPresets 放宽的只有 persona 行：列出的预设拿到同一份人设，未列出的保持自己的 prefix。
+  // 按段落文本断言，不渲染提示词：该夹具继承的官方前缀含未注册的 {{model}}。
+  const SHARED_PERSONA = 'Shared persona for listed presets.';
+  const INHERITED_PERSONA = 'You are a coding agent powered by the {{model}} model.';
+  const sectionTexts = assembly => assembly.sections.map(section => section.text);
+  const listed = await runtime({ disabledTools: OFFICIAL_FREE, persona: { prefix: SHARED_PERSONA }, personaPresets: ['standard', 'other'] }, { presetId: 'other' });
+  try {
+    assert(sectionTexts(await listed.assemble()).includes(SHARED_PERSONA), '列出的非 standard 预设必须拿到这份人设');
+  } finally { await listed.dispose(); }
+  const unlisted = await runtime({ disabledTools: OFFICIAL_FREE, persona: { prefix: SHARED_PERSONA } }, { presetId: 'other' });
+  try {
+    const texts = sectionTexts(await unlisted.assemble());
+    assert(texts.includes(INHERITED_PERSONA), '未列出的预设必须保留自己的 prefix');
+    assert(!texts.includes(SHARED_PERSONA), '未列出的预设不得拿到这份人设');
+  } finally { await unlisted.dispose(); }
+  for (const [config, pattern] of [
+    [{ persona: { prefix: PERSONA }, personaPresets: [] }, /personaPresets must be a non-empty array/],
+    [{ persona: { prefix: PERSONA }, personaPresets: ['standard', 7] }, /personaPresets must be a non-empty array/],
+    [{ personaPresets: ['other'] }, /personaPresets only widens the persona row patch/],
+  ]) await assert.rejects(() => registeredPreset(config), pattern);
+  console.log('PASS: personaPresets widens only the persona row — listed presets inherit the configured prefix, others keep their own');
+
   const hiddenIdentity = await runtime({ shellMode: 'bash', bashPath, pwshPath, disabledTools: ['tool-web'], persona: { prefix: PERSONA, suffix: 'Verify persona suffix.' }, includeHarnessIdentity: false });
   try {
     const assembly = await hiddenIdentity.assemble();

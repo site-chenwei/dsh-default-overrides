@@ -16,6 +16,8 @@ const SHELL_GROUP_ID = 'local-standard-persistent-shell';
 const ENVIRONMENT_SECTION = 'local:dsh-default-overrides:environment';
 const PERSONA_ROW = { id: 'persona', name: '@deepseek-ai/dsh-persona' };
 const PERSONA_KEYS = ['prefix', 'suffix', 'complete', 'includeRuntimeContext'];
+// persona 行补丁默认只作用官方 standard；personaPresets 可放宽到结构相同的其他预设，Shell 与工具行补丁不受影响。
+const DEFAULT_PERSONA_PRESETS = ['standard'];
 const SHIM_FILENAME = 'dsh-default-overrides-bashrc.sh';
 
 /** 单引号包裹 bash 参数，路径含单引号时按 POSIX 规则转义。 */
@@ -166,6 +168,13 @@ export async function apply(ctx, options = {}) {
   }
   const persona = options.persona;
   if (persona !== undefined) verifyPersonaOption(persona);
+  const personaPresets = options.personaPresets ?? DEFAULT_PERSONA_PRESETS;
+  if (!Array.isArray(personaPresets) || personaPresets.length === 0 || personaPresets.some(id => typeof id !== 'string' || id.length === 0)) {
+    throw new Error('dsh-default-overrides: personaPresets must be a non-empty array of agent preset ids');
+  }
+  if (persona === undefined && options.personaPresets !== undefined) {
+    throw new Error('dsh-default-overrides: personaPresets only widens the persona row patch; configure persona as well');
+  }
   const includeHarnessIdentity = options.includeHarnessIdentity;
   if (includeHarnessIdentity !== undefined && typeof includeHarnessIdentity !== 'boolean') {
     throw new Error('dsh-default-overrides: includeHarnessIdentity must be a boolean');
@@ -205,8 +214,8 @@ export async function apply(ctx, options = {}) {
     ctx.loader.import('@deepseek-ai/dsh-system-prompt'),
   ]);
   const patched = new WeakMap();
-  // 真正被本插件打过行补丁的预设 id：提示词平面据此判断"这个预设的 Shell 通道是否由本插件配置"，而不是按预设名判断。
-  const configuredPresets = new Set();
+  // 真正被本插件打过 Shell/工具行补丁的预设 id：提示词平面据此判断"这个预设的 Shell 通道是否由本插件配置"，而不是按预设名判断。
+  const configuredShellPresets = new Set();
   let shimPath;
 
   function shellPatches() {
@@ -255,10 +264,10 @@ export async function apply(ctx, options = {}) {
   }
 
   // Note: 仅固定 persona 行，保留完整标准指引 — 见 .agents/notes/implemented/feature/2026-09-24-configurable-persona.md。
-  function personaPatch(rows) {
+  function personaPatch(rows, presetId) {
     const matches = rows.filter(row => row.id === PERSONA_ROW.id);
     if (matches.length !== 1 || matches[0].name !== PERSONA_ROW.name || typeof matches[0].config?.prefix !== 'string') {
-      throw new Error(`dsh-default-overrides: expected one standard ${PERSONA_ROW.id} row named ${PERSONA_ROW.name} with a string config.prefix; review preset compatibility`);
+      throw new Error(`dsh-default-overrides: expected one ${PERSONA_ROW.id} row named ${PERSONA_ROW.name} in preset ${presetId} with a string config.prefix; review preset compatibility`);
     }
     // 行补丁整体替换 config，因此先展开当前有效值；complete 与运行时上下文按方案默认，可显式覆盖。
     return {
@@ -279,30 +288,38 @@ export async function apply(ctx, options = {}) {
     if (this.runtime?.callback === SystemPrompt) {
       return includeHarnessIdentity === undefined ? config : { ...config, includeHarnessIdentity };
     }
-    // 行补丁仍只作用于官方 standard 预设：它是本插件声明兼容的结构基线（persona 行、tool-bash/tool-pwsh 行、行 ID 清单都在那里）。
-    if (this.runtime?.callback !== AgentPreset || config.id !== 'standard') return config;
+    // 行补丁分两类：Shell 与工具行仍只作用于官方 standard 预设：它是本插件声明兼容的结构基线（persona 行、tool-bash/tool-pwsh 行、行 ID 清单都在那里）。
+    if (this.runtime?.callback !== AgentPreset) return config;
+    const structural = config.id === 'standard';
+    // Note: personaPresets 只放宽 persona 行，不碰 Shell 与工具行 — 见 .agents/notes/implemented/feature/2026-09-25-persona-across-presets.md。
+    const personaOnly = !structural && persona !== undefined && personaPresets.includes(config.id);
+    if (!structural && !personaOnly) return config;
     if (patched.has(config)) return patched.get(config);
-    if (!shellEnabled && disabledTools.length === 0 && persona === undefined) return config;
+    if (structural && !shellEnabled && disabledTools.length === 0 && persona === undefined) return config;
     const rows = flattenRows(config.plugins);
-    if (shellEnabled) verifyShellRows(rows);
-    // 上游行 ID 变化时明确报错，避免 applyEntryPatches 只留一条 warning 后静默不生效。
-    for (const id of disabledTools) {
-      if (!rows.some(row => row.id === id)) {
-        throw new Error(`dsh-default-overrides: disabledTools names ${JSON.stringify(id)}, which is not a row of the standard preset`);
+    const patches = personaOnly ? [personaPatch(rows, config.id)] : [];
+    if (structural) {
+      if (shellEnabled) verifyShellRows(rows);
+      // 上游行 ID 变化时明确报错，避免 applyEntryPatches 只留一条 warning 后静默不生效。
+      for (const id of disabledTools) {
+        if (!rows.some(row => row.id === id)) {
+          throw new Error(`dsh-default-overrides: disabledTools names ${JSON.stringify(id)}, which is not a row of the standard preset`);
+        }
       }
+      patches.push(
+        ...disabledTools.map(id => ({ id, disabled: true })),
+        ...(persona === undefined ? [] : [personaPatch(rows, config.id)]),
+        ...(shellEnabled ? shellPatches() : []),
+      );
     }
-    const patches = [
-      ...disabledTools.map(id => ({ id, disabled: true })),
-      ...(persona === undefined ? [] : [personaPatch(rows)]),
-      ...(shellEnabled ? shellPatches() : []),
-    ];
     const result = {
       ...config,
       plugins: applyEntryPatches(config.plugins, patches, (message, ...args) => ctx.logger.warn(message, ...args)),
     };
     patched.set(config, result);
     patched.set(result, result);
-    configuredPresets.add(config.id);
+    // 只有真的打过 Shell/工具行补丁的预设才算本插件接管的通道。
+    if (structural) configuredShellPresets.add(config.id);
     return result;
   }, { global: true });
 
@@ -313,7 +330,7 @@ export async function apply(ctx, options = {}) {
       const agent = context.agent;
       if (!agent) return assembly;
       // 不按预设名放行也不按预设名拦截：环境事实对每个 agent 都贡献，只有本插件确实给该预设打过行补丁时才声明 Shell 通道并改写工具说明。
-      const ownsChannel = managedShell && configuredPresets.has(ctx.agentPresets.composedPreset(agent.ctx));
+      const ownsChannel = managedShell && configuredShellPresets.has(ctx.agentPresets.composedPreset(agent.ctx));
       const workspace = agent.session.header.cwd;
       const tools = ownsChannel
         ? assembly.tools.map(tool => tool.name === dialect

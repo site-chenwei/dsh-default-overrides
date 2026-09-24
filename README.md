@@ -10,11 +10,11 @@
 - `bashPath` 与 `pwshPath` 都可省略：显式路径会传给对应后端并在无效时报错，省略则用官方默认。
 - 模型说明与工具参数一致，补充当前方言及禁止套用其他 Shell 的操作规则。
 - 通过 `disabledTools` 按行 ID 禁用 `standard` 中的任意插件行。
-- 通过 `persona` 固定或替换 `standard` 的 persona 文本，其余标准指引与运行时上下文照常组装。
+- 通过 `persona` 固定或替换 persona 文本，其余标准指引与运行时上下文照常组装；`personaPresets` 决定这份人设作用于哪些预设（默认只有 `standard`）。
 - 通过 `includeHarnessIdentity` 隐藏全局 `harness:identity` 段，只去掉一句框架身份说明。
 - 通过 `envContext` 补充环境事实段：平台与工作区对 profile 内每个预设的 agent 都给出，Shell 通道细节只在插件确实配置过该预设时给出。
 - 通过 `normalizeWindowsPaths` 在命令进入 Bash 前把 Windows 反斜杠路径改写为正斜杠。
-- 通过内存补丁调整官方 `standard` 预设的行（persona、Shell、禁用清单），保留 `minimal` 与其他预设的行结构。
+- 通过内存补丁调整官方 `standard` 预设的行（Shell、禁用清单），以及 `personaPresets` 列出的每个预设的 persona 行，保留 `minimal` 与其他预设的其余行结构。
 
 未配置任何选项时，本插件不改变官方预设：不切换 Shell、不禁用任何工具行、不改 persona，也不隐藏身份段。
 
@@ -83,7 +83,8 @@ Shell 补丁、行补丁与提示词平面三者互不牵连：**行补丁只作
 |---|---|---|
 | `shellMode` | 未设置 | 四种取值见上表；不设置时保留官方 Shell 选择 |
 | `disabledTools` | `[]` | `standard` 预设中要禁用的行 ID 数组；ID 不存在时直接报错。不设置时不禁用任何行 |
-| `persona` | 未设置 | 覆盖 `standard` 的 persona 行，字段见下。不设置时不修改 persona |
+| `persona` | 未设置 | 覆盖 persona 行，字段见下。不设置时不修改 persona |
+| `personaPresets` | `['standard']` | 哪些预设的 persona 行接受上面的 `persona` 覆盖。只放宽 persona 行：Shell 与 `disabledTools` 仍只作用于 `standard`。必须与 `persona` 同时使用，否则报错 |
 | `includeHarnessIdentity` | 未设置 | 是否保留 `harness:identity` 段（`You are an AI agent powered by DeepSeek Harness.`）。不设置时不修改；`false` 隐藏该句 |
 | `normalizeWindowsPaths` | `false` | 仅 Bash 两模式：命令进入 bash 前把 `C:\a\b` 改写成 `C:/a/b`。设到其他模式会报错 |
 | `bashPath` | 未设置 | 可选。显式指定 Bash 可执行文件（Windows 上通常要指向 Git Bash）；省略时持久化模式用官方默认 `/bin/bash`，一次性模式在无需改写时保持官方行不动 |
@@ -103,6 +104,8 @@ Shell 补丁、行补丁与提示词平面三者互不牵连：**行补丁只作
 | `includeRuntimeContext` | `true` | 写 `false` 会抑制该 agent 作用域的运行时上下文快照 |
 
 行补丁整体替换 `config`，本插件先展开当前有效配置再覆盖你写出的字段，因此未写的字段（例如官方 suffix）会保留。`complete` 与 `includeRuntimeContext` 即使未写也会显式落成上表默认值，避免上游把提示词锁成单句。字段内的 `{{...}}` 按宿主已注册的变量严格插值，变量不存在会让组装报错。`persona` 至少写一个字段，键名或类型写错会在启动时直接报错。
+
+`personaPresets` 让同一份人设覆盖多个同构预设（官方 `standard`、`ptc`、`cordis` 的 persona 行结构一致）。写出 `ptc` 或 `cordis` 不会带来 `standard` 的 Shell 覆盖与行 ID 清单，那些改动仍只作用于 `standard`。刻意排除 `minimal`：它的 persona 行是 `complete: true` + `includeRuntimeContext: false`，而本插件会显式写入 `complete: false` + `includeRuntimeContext: true`，列进去等于把它从单句提示词改回普通会话。列出的预设若被上游改了 persona 行结构，启动时直接报错；写错预设 id 不会报错（宿主不提供可枚举的预设清单），只是那个预设静默拿不到人设。
 
 `includeHarnessIdentity` 作用于**全局** `system-prompt` 行（`dsh-base` 声明），而不是 `standard` 预设的 persona 行，因此影响该 profile 的所有预设与会话。写 `false` 只让模型少收到 `harness:identity` 这一段 `You are an AI agent powered by DeepSeek Harness.`，模型与 API、工具注册、Shell、团队/Goal/Workflow、沙箱与审批都不受影响；计划模式指引、工具说明、persona 与运行时上下文照常组装。本插件复用宿主 `@deepseek-ai/dsh-system-prompt` 的官方开关，不新造隐藏机制。
 
@@ -157,17 +160,17 @@ npm run verify:package -- `
   'C:/Program Files/PowerShell/7/pwsh.exe'
 ```
 
-运行验证覆盖四模式注册与路径传递、工具参数与提示、persona 与 `harness:identity` 的真实提示词组装、环境事实段在每种 `shellMode` × `envContext` 组合下的文本与工具表、预设范围、ready 重载、Bash 真进程、持久化 PTY、状态/退出码、后台失败与取消。未提供 PowerShell 路径时只检查 Pwsh 注册与启动参数，并明确跳过实跑。
+运行验证覆盖四模式注册与路径传递、工具参数与提示、persona 与 `harness:identity` 的真实提示词组装、`personaPresets` 的跨预设生效与未列出预设的默认保留、环境事实段在每种 `shellMode` × `envContext` 组合下的文本与工具表、预设范围、ready 重载、Bash 真进程、持久化 PTY、状态/退出码、后台失败与取消。未提供 PowerShell 路径时只检查 Pwsh 注册与启动参数，并明确跳过实跑。
 
 ### 已验证边界
 
-本机验证环境为 macOS、Node.js 24.15.0、DSH 0.1.7-rc.1。该 DSH 安装含既有 Bash marker 修复，本仓库不附带或修改宿主补丁，详见[运行契约记录](.agents/notes/implemented/bug-fix/2026-09-24-shell-channel-runtime-contracts.md)。
+本机验证环境为 macOS、Node.js 24.15.0、DSH 0.1.7-rc.2。该 DSH 安装含既有 Bash marker 修复，本仓库不附带或修改宿主补丁，详见[运行契约记录](.agents/notes/implemented/bug-fix/2026-09-24-shell-channel-runtime-contracts.md)。
 
 Windows Git Bash/ConPTY、PowerShell 真进程与完整 GUI/模型会话未在此环境实测。由于插件不声明版本约束，验证通过也不构成对未修改 DSH 安装或其他 DSH/Node 版本的兼容承诺。
 
 ## 参考
 
-分发设计见[bundle 决定](.agents/notes/implemented/architecture/2026-09-24-distributable-dsh-bundle.md)，迁入依据见[独立仓库决定](.agents/notes/implemented/architecture/2026-09-24-standalone-plugin-repository.md)。实现参考 [router-standard](https://github.com/yjh051108/dsh-routing-suite/tree/main/preset/router-standard) 和 [dsh-win32](https://github.com/sjh9714/dsh-win32/blob/00a9e0023883ffa4014203ba3932a1e697f52324/src/verify.ts)，执行契约以实际安装的 DSH 为准。
+分发设计见[bundle 决定](.agents/notes/implemented/architecture/2026-09-24-distributable-dsh-bundle.md)，迁入依据见[独立仓库决定](.agents/notes/implemented/architecture/2026-09-24-standalone-plugin-repository.md)，跨预设人设的作用范围见 [persona 跨预设](.agents/notes/implemented/feature/2026-09-25-persona-across-presets.md)。实现参考 [router-standard](https://github.com/yjh051108/dsh-routing-suite/tree/main/preset/router-standard) 和 [dsh-win32](https://github.com/sjh9714/dsh-win32/blob/00a9e0023883ffa4014203ba3932a1e697f52324/src/verify.ts)，执行契约以实际安装的 DSH 为准。
 
 ## 许可证
 

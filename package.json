@@ -1,6 +1,6 @@
 {
   "name": "dsh-default-overrides",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Configurable Bash and PowerShell overrides for the DSH standard preset.",
   "type": "module",
   "license": "MIT",
