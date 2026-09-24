@@ -7,7 +7,7 @@
 ## 功能范围
 
 - 四种 Shell 模式，每次只向模型暴露所选方言的一个 Shell 工具。
-- 两条可执行文件路径可以同时保留；显式路径会传给对应后端，路径无效直接报错。
+- `bashPath` 与 `pwshPath` 都可省略：显式路径会传给对应后端并在无效时报错，省略则用官方默认。
 - 模型说明与工具参数一致，补充当前方言及禁止套用其他 Shell 的操作规则。
 - 通过 `disabledTools` 按行 ID 禁用 `standard` 中的任意插件行。
 - 通过 `persona` 固定或替换 `standard` 的 persona 文本，其余标准指引与运行时上下文照常组装。
@@ -71,6 +71,8 @@ dsh plugin --profile web add dsh-default-overrides
 
 Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并同时保留 `pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'`。切换时只修改 `shellMode`。DSH 对匹配行的 `config` 做整体替换，因此要保留仍需使用的配置字段。
 
+**两条路径都可省略。** 只写 `shellMode: persistent-bash` 时会用官方默认终端（`/bin/bash`）启动持久化会话；`persistent-pwsh` 省略 `pwshPath` 时由官方探测 PowerShell。一次性模式省略 `bashPath` 且未开启 `normalizeWindowsPaths` 时，插件完全不改官方 Shell 行，等于官方默认行为（Windows 上官方默认给出的是 pwsh）；省略 `bashPath` 但需要路径改写时，改写走官方默认的 `bash -c`。
+
 | 字段 | 默认值 | 说明 |
 |---|---|---|
 | `shellMode` | 未设置 | 四种取值见上表；不设置时保留官方 Shell 选择 |
@@ -78,8 +80,8 @@ Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并�
 | `persona` | 未设置 | 覆盖 `standard` 的 persona 行，字段见下。不设置时不修改 persona |
 | `includeHarnessIdentity` | 未设置 | 是否保留 `harness:identity` 段（`You are an AI agent powered by DeepSeek Harness.`）。不设置时不修改；`false` 隐藏该句 |
 | `normalizeWindowsPaths` | `false` | 仅 Bash 两模式：命令进入 bash 前把 `C:\a\b` 改写成 `C:/a/b`。设到其他模式会报错 |
-| `bashPath` | 未设置 | Bash 两模式必填，必须是存在的绝对文件路径 |
-| `pwshPath` | 未设置 | 建议显式填写以固定版本；未填写时委托官方 PowerShell 探测 |
+| `bashPath` | 未设置 | 可选。显式指定 Bash 可执行文件（Windows 上通常要指向 Git Bash）；省略时持久化模式用官方默认 `/bin/bash`，一次性模式在无需改写时保持官方行不动 |
+| `pwshPath` | 未设置 | 可选。建议显式填写以固定版本；省略时委托官方 PowerShell 探测 |
 | `timeoutMs` | `300000` | 正整数。持久化模式为命令截止时间；一次性模式沿用官方等待、后台处理与上限 |
 | `envContext` | `true` | 是否向模型添加模式、配置路径和会话工作区；关闭后仍保留工具操作规则 |
 

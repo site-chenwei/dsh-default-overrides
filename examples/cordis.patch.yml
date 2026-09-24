@@ -4,7 +4,9 @@
 - id: local-dsh-default-overrides
   config:
     shellMode: persistent-bash
+    # Optional: omit to use the official default (/bin/bash); point at Git Bash on Windows.
     bashPath: 'C:/Program Files/Git/bin/bash.exe'
+    # Optional: omit to let the official PowerShell executor auto-detect.
     pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'
     timeoutMs: 300000
     envContext: true

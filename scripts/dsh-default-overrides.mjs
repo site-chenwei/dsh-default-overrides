@@ -166,11 +166,8 @@ export async function apply(ctx, options = {}) {
   const persistent = shellEnabled && mode.startsWith('persistent-');
   const dialect = mode === 'bash' || mode === 'persistent-bash' ? 'bash' : 'pwsh';
   const pathKey = dialect === 'bash' ? 'bashPath' : 'pwshPath';
-  // 两路径可以并存；仅当前家族的配置影响加载，不回退到另一家族的路径。
+  // 两路径可以并存且都可选；未配置时交给官方默认（bash 用 /bin/bash，pwsh 用官方探测），仅当前家族的字段影响加载。
   const shellPath = shellEnabled ? options[pathKey] : undefined;
-  if (shellEnabled && dialect === 'bash' && shellPath === undefined) {
-    throw new Error(`dsh-default-overrides: shellMode '${mode}' requires bashPath (absolute path to Git Bash bash.exe)`);
-  }
   if (shellPath !== undefined && (typeof shellPath !== 'string' || !isAbsolute(shellPath) || !existsSync(shellPath) || !statSync(shellPath).isFile())) {
     throw new Error(`dsh-default-overrides: ${pathKey} must name an existing absolute executable`);
   }
@@ -185,6 +182,8 @@ export async function apply(ctx, options = {}) {
   if (normalizeWindowsPaths && (!shellEnabled || dialect !== 'bash')) {
     throw new Error('dsh-default-overrides: normalizeWindowsPaths only applies to shellMode bash or persistent-bash');
   }
+  // 一次性 bash 既没配置路径也不需要改写时不挂任何补丁，提示词层也按官方默认处理 — 见 .agents/notes/implemented/feature/2026-09-24-optional-shell-paths.md。
+  const officialBashFallback = shellEnabled && !persistent && dialect === 'bash' && shellPath === undefined && !normalizeWindowsPaths;
   const [{ default: AgentPreset }, { applyEntryPatches }, { default: SystemPrompt }] = await Promise.all([
     ctx.loader.import('@deepseek-ai/dsh-agent-preset'),
     ctx.loader.import('@deepseek-ai/cordis-plugin-include'),
@@ -196,6 +195,7 @@ export async function apply(ctx, options = {}) {
   function shellPatches() {
     // Note: 归一化必须在 bash 解析命令前完成，持久化模式只能靠 eval 垫片 — 见 .agents/notes/implemented/feature/2026-09-24-windows-path-normalization.md。
     const rewritePaths = normalizeWindowsPaths && dialect === 'bash';
+    if (officialBashFallback) return [];
     if (rewritePaths && persistent) shimPath ??= writeBashShim();
     const backendRows = persistent ? [
       { id: 'pty', name: '@deepseek-ai/dsh-terminal' },
@@ -287,7 +287,7 @@ export async function apply(ctx, options = {}) {
     return result;
   }, { global: true });
 
-  if (shellEnabled) {
+  if (shellEnabled && !officialBashFallback) {
     ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
       const assembly = await next();
       const agent = context.agent;
@@ -302,7 +302,7 @@ export async function apply(ctx, options = {}) {
         tools,
         variables: {
           ...assembly.variables,
-          dsh_overrides_shell_path: shellPath ?? 'auto-detected by the official PowerShell executor (pwshPath unset)',
+          dsh_overrides_shell_path: shellPath ?? (dialect === 'bash' ? 'the official default bash (bashPath unset)' : 'auto-detected by the official PowerShell executor (pwshPath unset)'),
           ...(workspace === undefined ? {} : { dsh_overrides_workspace: workspace }),
         },
         contexts: [

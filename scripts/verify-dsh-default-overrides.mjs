@@ -127,7 +127,6 @@ function quotePwsh(value) { return `'${value.replaceAll("'", "''")}'`; }
 try {
   for (const [config, pattern] of [
     [{ shellMode: 'fish' }, /must be one of/],
-    [{ shellMode: 'bash' }, /requires bashPath/],
     [{ shellMode: 'bash', bashPath: join(scratch, 'missing') }, /bashPath must name/],
     [{ shellMode: 'pwsh', pwshPath: join(scratch, 'missing') }, /pwshPath must name/],
     [{ shellMode: 'bash', bashPath, timeoutMs: -1 }, /positive safe integer/],
@@ -160,6 +159,25 @@ try {
   assert.equal(rewriteBackend.config.shellArgs[2], SHIM.replaceAll('\\', '/'));
   assert.match(readFileSync(SHIM, 'utf8'), /eval\(\) \{ __dsh_default_overrides_eval "\$@"; \}/);
   console.log('PASS: path normalization reaches the chosen backend and writes the shim only when enabled');
+
+  // 两条路径都可选：不配置时持久化模式交给官方默认终端，一次性 bash 保持官方行不动。
+  for (const mode of ['persistent-bash', 'persistent-pwsh']) {
+    const config = await registeredPreset({ shellMode: mode });
+    const backend = flatten(config.plugins).find(row => row.id === 'terminal-shell');
+    assert.equal(backend.config.shellPath, undefined, `${mode}: 未配置路径时不得写入 shellPath`);
+    assert.equal(backend.config.shellDialect, mode.includes('bash') ? 'bash' : 'pwsh');
+    assert.equal(backend.config.shellArgs, undefined);
+  }
+  assert.deepEqual(await registeredPreset({ shellMode: 'bash' }), standard.config, '一次性 bash 未配置路径时保持官方行不动');
+  const pwshDefault = await registeredPreset({ shellMode: 'pwsh' });
+  const pwshBackend = flatten(pwshDefault.plugins).find(row => row.id === 'pwsh-executor');
+  assert.equal(pwshBackend.config.pwshPath, undefined, '一次性 pwsh 未配置路径时交给官方探测');
+  assert.equal(pwshBackend.config.timeoutMs, 300000);
+  const bashDefault = await registeredPreset({ shellMode: 'bash', normalizeWindowsPaths: true });
+  const defaultBackend = flatten(bashDefault.plugins).find(row => row.id === 'gitbash-executor');
+  assert.equal(defaultBackend.config.shellPath, undefined, '无路径但需要改写时仍挂适配器，由其沿用官方默认 argv');
+  assert.equal(defaultBackend.config.normalizeWindowsPaths, true);
+  console.log('PASS: bashPath and pwshPath are optional and fall back to official defaults');
 
   for (const mode of ['persistent-bash', 'persistent-pwsh', 'bash', 'pwsh']) {
     const config = await registeredPreset({ shellMode: mode, bashPath, pwshPath, disabledTools: ['tool-web', 'tool-workflow'] });
@@ -354,6 +372,18 @@ try {
     } finally { await rewriting.dispose(); }
   }
   console.log('PASS: normalizeWindowsPaths rewrites Windows paths in one-shot bash and in the persistent PTY');
+
+  // 未配置路径时的官方默认：持久化走官方 /bin/bash 终端，一次性 bash（需要改写时）走官方 bash -c。
+  const defaultPersistent = await runtime({ shellMode: 'persistent-bash', disabledTools: ['tool-web'], timeoutMs: 10000 });
+  try {
+    await defaultPersistent.execute('bash', { command: 'export DSH_DEFAULT_STATE=ok' });
+    assert.match(succeeded(await defaultPersistent.execute('bash', { command: 'printf "%s\\n" "$DSH_DEFAULT_STATE"' })), /ok/, 'official default terminal persists state');
+  } finally { await defaultPersistent.dispose(); }
+  const defaultOneShot = await runtime({ shellMode: 'bash', disabledTools: ['tool-web'], timeoutMs: 10000, normalizeWindowsPaths: true });
+  try {
+    assert.match(succeeded(await defaultOneShot.execute('bash', pathArgs('bash', RAW_PATH_COMMAND))), /C:\/Users\/chenwei\/docs/, 'official bash -c still receives the rewritten command');
+  } finally { await defaultOneShot.dispose(); }
+  console.log('PASS: shell paths are optional — official /bin/bash terminal and official bash -c both work');
   console.log('Not exercised: a full GUI/model session or Windows ConPTY on this host. Live PowerShell runs only when the optional pwsh-path argument is supplied.');
 } finally {
   if (previousHome === undefined) delete process.env.DSH_HOME;
