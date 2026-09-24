@@ -53,7 +53,7 @@ try {
 
   // Exercise the documented user layer, then inspect the real DSH composition.
   writeFileSync(join(profileDir, 'cordis.patch.yml'), JSON.stringify([
-    { id: 'local-dsh-default-overrides', config: { shellMode: 'bash', bashPath, disabledTools: ['tool-web'] } },
+    { id: 'local-dsh-default-overrides', config: { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], persona: { prefix: 'You are a helpful software engineer assistant.' } } },
   ]));
   const profile = boot.loadProfileDirectory('dsh', profileDir, installAnchor);
   assert(profile.layers.some(layer => layer.packageName === manifest.name), 'bundle passes host compatibility and patch loading');
@@ -64,7 +64,7 @@ try {
   const standard = entries.find(row => row.id === 'preset-standard');
   assert.equal(entries.filter(row => row.id === entry.id).length, 1);
   assert.equal(entry.name, manifest.name);
-  assert.deepEqual(entry.config, { shellMode: 'bash', bashPath, disabledTools: ['tool-web'] });
+  assert.deepEqual(entry.config, { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], persona: { prefix: 'You are a helpful software engineer assistant.' } });
   assert(standard.inject.includes('dshDefaultOverridesReady'));
 
   const [{ Context }, { default: Loader, Group }] = await Promise.all([load('cordis'), load('cordis-plugin-loader')]);
@@ -84,6 +84,7 @@ try {
     assert.equal(received.length, 1, 'the real preset registers after the packaged plugin is ready');
     const rows = received[0].plugins;
     assert.equal(rows.find(row => row.id === 'tool-web').disabled, true);
+    assert.equal(rows.find(row => row.id === 'persona').config.prefix, 'You are a helpful software engineer assistant.');
     const shell = rows.find(row => row.id === 'local-standard-persistent-shell');
     assert.equal(shell.config[0].config.shellPath, bashPath);
     assert.equal((await root.loader.import(shell.config[0].name)).name, 'gitbash-executor');

@@ -13,6 +13,9 @@
         disabledTools:
           - tool-web
           - tool-workflow
+        # Override the standard persona row; unset fields keep their current values.
+        persona:
+          prefix: 'You are a helpful software engineer assistant.'
 
 # Retain any other existing inject dependencies on preset-standard.
 - id: preset-standard

@@ -12,6 +12,33 @@ const SHIPPED_SHELL_ROWS = [
 const SHELL_MODES = ['persistent-bash', 'persistent-pwsh', 'bash', 'pwsh'];
 const SHELL_GROUP_ID = 'local-standard-persistent-shell';
 const ENVIRONMENT_SECTION = 'local:dsh-default-overrides:environment';
+const PERSONA_ROW = { id: 'persona', name: '@deepseek-ai/dsh-persona' };
+const PERSONA_KEYS = ['prefix', 'suffix', 'complete', 'includeRuntimeContext'];
+
+/** 校验 persona 覆盖项；键名或类型写错时直接报错，避免静默不生效。 */
+function verifyPersonaOption(persona) {
+  if (persona === null || typeof persona !== 'object' || Array.isArray(persona)) {
+    throw new Error(`dsh-default-overrides: persona must be an object using ${PERSONA_KEYS.join(', ')}`);
+  }
+  const keys = Object.keys(persona);
+  const unknown = keys.filter(key => !PERSONA_KEYS.includes(key));
+  if (unknown.length > 0) {
+    throw new Error(`dsh-default-overrides: persona has unsupported keys ${unknown.map(key => JSON.stringify(key)).join(', ')}; allowed: ${PERSONA_KEYS.join(', ')}`);
+  }
+  if (keys.length === 0) {
+    throw new Error(`dsh-default-overrides: persona needs at least one of ${PERSONA_KEYS.join(', ')}`);
+  }
+  for (const key of ['prefix', 'suffix']) {
+    if (persona[key] !== undefined && typeof persona[key] !== 'string') {
+      throw new Error(`dsh-default-overrides: persona.${key} must be a string`);
+    }
+  }
+  for (const key of ['complete', 'includeRuntimeContext']) {
+    if (persona[key] !== undefined && typeof persona[key] !== 'boolean') {
+      throw new Error(`dsh-default-overrides: persona.${key} must be a boolean`);
+    }
+  }
+}
 
 /** 操作规则补充官方说明；不声称 PATH 遮蔽或系统级 Shell 隔离。 */
 function shellGuidance(dialect) {
@@ -84,6 +111,8 @@ export async function apply(ctx, options = {}) {
   if (!Array.isArray(disabledTools) || disabledTools.some(id => typeof id !== 'string' || id.length === 0)) {
     throw new Error('dsh-default-overrides: disabledTools must be an array of standard preset row ids');
   }
+  const persona = options.persona;
+  if (persona !== undefined) verifyPersonaOption(persona);
   const persistent = shellEnabled && mode.startsWith('persistent-');
   const dialect = mode === 'bash' || mode === 'persistent-bash' ? 'bash' : 'pwsh';
   const pathKey = dialect === 'bash' ? 'bashPath' : 'pwshPath';
@@ -145,11 +174,30 @@ export async function apply(ctx, options = {}) {
     ];
   }
 
+  // Note: 仅固定 persona 行，保留完整标准指引 — 见 .agents/notes/implemented/feature/2026-09-24-configurable-persona.md。
+  function personaPatch(rows) {
+    const matches = rows.filter(row => row.id === PERSONA_ROW.id);
+    if (matches.length !== 1 || matches[0].name !== PERSONA_ROW.name || typeof matches[0].config?.prefix !== 'string') {
+      throw new Error(`dsh-default-overrides: expected one standard ${PERSONA_ROW.id} row named ${PERSONA_ROW.name} with a string config.prefix; review preset compatibility`);
+    }
+    // 行补丁整体替换 config，因此先展开当前有效值；complete 与运行时上下文按方案默认，可显式覆盖。
+    return {
+      id: PERSONA_ROW.id,
+      name: PERSONA_ROW.name,
+      config: {
+        ...matches[0].config,
+        ...persona,
+        complete: persona.complete ?? false,
+        includeRuntimeContext: persona.includeRuntimeContext ?? true,
+      },
+    };
+  }
+
   ctx.on('internal/config', function (_raw, next) {
     const config = next();
     if (this.runtime?.callback !== AgentPreset || config.id !== 'standard') return config;
     if (patched.has(config)) return patched.get(config);
-    if (!shellEnabled && disabledTools.length === 0) return config;
+    if (!shellEnabled && disabledTools.length === 0 && persona === undefined) return config;
     const rows = flattenRows(config.plugins);
     if (shellEnabled) verifyShellRows(rows);
     // 上游行 ID 变化时明确报错，避免 applyEntryPatches 只留一条 warning 后静默不生效。
@@ -160,6 +208,7 @@ export async function apply(ctx, options = {}) {
     }
     const patches = [
       ...disabledTools.map(id => ({ id, disabled: true })),
+      ...(persona === undefined ? [] : [personaPatch(rows)]),
       ...(shellEnabled ? shellPatches() : []),
     ];
     const result = {

@@ -10,9 +10,10 @@
 - 两条可执行文件路径可以同时保留；显式路径会传给对应后端，路径无效直接报错。
 - 模型说明与工具参数一致，补充当前方言及禁止套用其他 Shell 的操作规则。
 - 通过 `disabledTools` 按行 ID 禁用 `standard` 中的任意插件行；不配置时不动官方预设。
+- 通过 `persona` 固定或替换 `standard` 的 persona 文本，其余标准指引与运行时上下文照常组装。
 - 通过内存补丁调整官方 `standard` 预设，保留 `minimal` 和其他预设。
 
-未配置任何选项时，本插件不改变官方预设：既不切换 Shell，也不禁用任何工具行。
+未配置任何选项时，本插件不改变官方预设：不切换 Shell、不禁用任何工具行、不改 persona。
 
 | `shellMode` | 使用的路径 | 模型工具 | 状态 |
 |---|---|---|---|
@@ -70,6 +71,8 @@ macOS Bash 示例：
     disabledTools:
       - tool-web
       - tool-workflow
+    persona:
+      prefix: 'You are a helpful software engineer assistant.'
 ```
 
 Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并同时保留 `pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'`。切换时只修改 `shellMode`。DSH 对匹配行的 `config` 做整体替换，因此要保留仍需使用的配置字段。
@@ -78,12 +81,24 @@ Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并�
 |---|---|---|
 | `shellMode` | 未设置 | 四种取值见上表；不设置时保留官方 Shell 选择 |
 | `disabledTools` | `[]` | `standard` 预设中要禁用的行 ID 数组；ID 不存在时直接报错。不设置时不禁用任何行 |
+| `persona` | 未设置 | 覆盖 `standard` 的 persona 行，字段见下。不设置时不修改 persona |
 | `bashPath` | 未设置 | Bash 两模式必填，必须是存在的绝对文件路径 |
 | `pwshPath` | 未设置 | 建议显式填写以固定版本；未填写时委托官方 PowerShell 探测 |
 | `timeoutMs` | `300000` | 正整数。持久化模式为命令截止时间；一次性模式沿用官方等待、后台处理与上限 |
 | `envContext` | `true` | 是否向模型添加模式、配置路径和会话工作区；关闭后仍保留工具操作规则 |
 
 `disabledTools` 按 `standard` 预设的行 ID 生效，包含分组内的行。常用 ID 有 `tool-web`、`tool-workflow`、`tool-ralph`、`skill-filesystem`；完整列表见安装中 `@deepseek-ai/dsh-web-app/presets/standard.patch.yml` 的 `config.plugins`。本插件只做 `disabled: true`，不改变这些行的其他配置。
+
+`persona` 覆盖官方 `persona` 行（`@deepseek-ai/dsh-persona`），可写字段与该插件的 schema 一致：
+
+| `persona` 字段 | 默认值 | 说明 |
+|---|---|---|
+| `prefix` | 保留官方值 | persona 前缀正文，也就是模型的身份说明 |
+| `suffix` | 保留官方值 | persona 后缀；官方值是 `Your working directory is {{cwd}}.` |
+| `complete` | `false` | 写 `true` 会把 `prefix` 变成整个系统提示词，抑制 suffix 与所有其他段落 |
+| `includeRuntimeContext` | `true` | 写 `false` 会抑制该 agent 作用域的运行时上下文快照 |
+
+行补丁整体替换 `config`，本插件先展开当前有效配置再覆盖你写出的字段，因此未写的字段（例如官方 suffix）会保留。`complete` 与 `includeRuntimeContext` 即使未写也会显式落成上表默认值，避免上游把提示词锁成单句。字段内的 `{{...}}` 按宿主已注册的变量严格插值，变量不存在会让组装报错。`persona` 至少写一个字段，键名或类型写错会在启动时直接报错。
 
 只验证和使用当前模式对应的路径。一次性工具的前台等待超时可能将命令转为后台任务，并不等于杀死进程。配置后使用新会话验收，旧会话可能保留旧预设和 Shell 状态。
 

@@ -84,7 +84,7 @@ async function runtime(config) {
     await root.plugin(modules['dsh-jobs-local'].default);
     await root.plugin(modules['dsh-agent-preset-registry'].default, { default: 'standard' });
     const declaration = withReady(standard);
-    declaration.config.plugins = structuredClone(standard.config.plugins.filter(row => ['tool-bash', 'tool-pwsh', 'tool-jobs', 'tool-web'].includes(row.id)));
+    declaration.config.plugins = structuredClone(standard.config.plugins.filter(row => ['persona', 'tool-bash', 'tool-pwsh', 'tool-jobs', 'tool-web'].includes(row.id)));
     declaration.config.plugins.push({ id: 'tool-workflow', name: '@deepseek-ai/dsh-tool-workflow', disabled: true });
     await root.loader.root.update([declaration, overrideRow(config)]);
     await settle(root);
@@ -134,6 +134,12 @@ try {
     [{ disabledTools: 'tool-web' }, /disabledTools must be an array/],
     [{ disabledTools: ['tool-web', 42] }, /disabledTools must be an array/],
     [{ disabledTools: ['tool-missing'] }, /not a row of the standard preset/],
+    [{ persona: 'text' }, /persona must be an object/],
+    [{ persona: null }, /persona must be an object/],
+    [{ persona: {} }, /persona needs at least one/],
+    [{ persona: { preifx: 'typo' } }, /unsupported keys/],
+    [{ persona: { prefix: 42 } }, /persona\.prefix must be a string/],
+    [{ persona: { complete: 'yes' } }, /persona\.complete must be a boolean/],
   ]) await assert.rejects(() => registeredPreset(config), pattern);
 
   for (const mode of ['persistent-bash', 'persistent-pwsh', 'bash', 'pwsh']) {
@@ -169,8 +175,21 @@ try {
   const disableRows = flatten(disableOnly.plugins);
   for (const id of ['tool-web', 'tool-workflow']) assert.equal(disableRows.find(row => row.id === id).disabled, true);
   for (const id of ['tool-bash', 'tool-pwsh', 'skill-filesystem']) assert.deepEqual(disableRows.find(row => row.id === id), standard.config.plugins.find(row => row.id === id));
+
+  const shippedPersona = standard.config.plugins.find(row => row.id === 'persona');
+  const PERSONA = 'You are a helpful software engineer assistant.';
+  const personaRow = config => flatten(config.plugins).find(row => row.id === 'persona');
+  const fixed = await registeredPreset({ persona: { prefix: PERSONA } });
+  assert.deepEqual(personaRow(fixed).config, { ...shippedPersona.config, prefix: PERSONA, complete: false, includeRuntimeContext: true });
+  assert.equal(personaRow(fixed).config.suffix, shippedPersona.config.suffix, 'official suffix template is preserved');
+  // persona 之外的整棵条目树必须与官方预设逐字段一致。
+  assert.deepEqual(fixed.plugins.map(row => row.id === 'persona' ? { ...row, config: shippedPersona.config } : row), standard.config.plugins);
+  assert.deepEqual(personaRow(await registeredPreset({ persona: { suffix: 'Only the suffix.' } })).config, { ...shippedPersona.config, suffix: 'Only the suffix.', complete: false, includeRuntimeContext: true });
+  assert.deepEqual(personaRow(await registeredPreset({ persona: { prefix: PERSONA, suffix: 'Kept.', complete: true, includeRuntimeContext: false } })).config, { prefix: PERSONA, suffix: 'Kept.', complete: true, includeRuntimeContext: false });
   const sparse = structuredClone(standard);
   sparse.config.plugins = sparse.config.plugins.filter(row => ['tool-bash', 'tool-pwsh'].includes(row.id));
+  // 上游预设缺少 persona 行时必须报错，而不是静默跳过。
+  await assert.rejects(() => registeredPreset({ persona: { prefix: PERSONA } }, sparse), /review preset compatibility/);
   await registeredPreset({ shellMode: 'bash', bashPath }, sparse);
   await registeredPreset({ shellMode: 'persistent-bash', bashPath, pwshPath }, standard, async (root, received) => {
     await root.loader.update('local-dsh-default-overrides', { config: { shellMode: 'pwsh', bashPath, pwshPath } });
@@ -186,7 +205,7 @@ try {
   console.log('PASS: actual preset registration, ready reload, all four path mappings, minimal/custom isolation, missing targets and no host mutation');
 
   for (const mode of ['bash', 'pwsh', 'persistent-bash', 'persistent-pwsh']) {
-    const harness = await runtime({ shellMode: mode, bashPath, pwshPath, timeoutMs: 10000, disabledTools: ['tool-web'] });
+    const harness = await runtime({ shellMode: mode, bashPath, pwshPath, timeoutMs: 10000, disabledTools: ['tool-web'], persona: { prefix: PERSONA, suffix: 'Verify persona suffix.' } });
     const { root, agent } = harness;
     const persistent = mode.startsWith('persistent-');
     const dialect = mode.includes('bash') ? 'bash' : 'pwsh';
@@ -202,6 +221,10 @@ try {
       const context = modules['dsh-system-prompt'].renderContextSnapshot(before);
       assert(context.includes(dialect === 'bash' ? bashPath : pwshPath));
       assert(context.includes(persistent ? 'command only' : 'command and description'));
+      const prompt = modules['dsh-system-prompt'].renderPrompt(before);
+      assert(prompt.includes(PERSONA), `${mode}: fixed persona reaches the rendered system prompt`);
+      assert(prompt.includes('Verify persona suffix.'), `${mode}: configured persona suffix reaches the rendered system prompt`);
+      assert(prompt.trim().length > PERSONA.length + 'Verify persona suffix.'.length, `${mode}: complete=false keeps other prompt sections`);
       const repeated = await harness.assemble();
       assert.equal(repeated.tools.find(tool => tool.name === dialect).description, selected.description, 'description does not accumulate');
       assert.deepEqual(repeated.tools.find(tool => tool.name === dialect).parameters, selected.parameters);
