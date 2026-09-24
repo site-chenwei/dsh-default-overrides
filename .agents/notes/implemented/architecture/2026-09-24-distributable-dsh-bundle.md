@@ -12,7 +12,7 @@ Status: implemented
 
 GitHub 标签与 npm 使用相同的已提交 `.mjs` 源码，无编译、prepare 或 postinstall。发布白名单包含完整运行/验证脚本、补丁、示例及文档；设计笔记也随包分发，保持文档和入口注释的相对链接有效。`prepack` 仅运行无依赖的语法检查。
 
-DSH 的实际 bundle 契约与 CLI 安装行为依据本机 `0.1.7-rc.1` 的 `dsh-app-boot`、`dsh-plugin-manager` 和 Loader 实现。DSH 根据 `peerDependencies` 检查宿主版本，因此声明精确 `0.1.7-rc.1`；optional 标记避免安装第二套宿主，官方模块仍通过 `ctx.loader.import` 复用。Node 最低声明采用已验证的 `24.15.0` 基线，不声称这是源码语法的最低要求；扩大版本范围前重跑验证。
+DSH 的实际 bundle 契约与 CLI 安装行为依据本机 `dsh-app-boot`、`dsh-plugin-manager` 和 Loader 实现，已在 `0.1.7-rc.1` 与 `0.1.7-rc.2` 上各跑一遍完整验证。宿主会依据 `peerDependencies` 拒绝不匹配的插件：最初的精确 `0.1.7-rc.1` 声明在宿主升到 rc.2 后直接拦下安装、并让已装版本在启动时被跳过；改为范围后仍会在下一次宿主升级时复现同样的问题。因此最终**不声明任何版本约束**（无 `peerDependencies`、无 `engines`），兼容性改由验证套件判定，升级宿主或 Node 后重跑 `npm run verify:package` 即可。官方模块始终通过 `ctx.loader.import` 复用，不复制宿主依赖。
 
 [bundle 补丁](../../../../cordis.patch.yml)的默认 `config` 为空：不配置时插件不修改官方预设，Shell 通道和工具禁用清单都由使用者在 profile 层显式开启，禁用清单见[可配置禁用清单决定](../feature/2026-09-24-configurable-disabled-tools.md)。机器路径只放在用户 profile 补丁。bundle 必须位于提供 `preset-standard` 的层之后，文档和验证都使用官方 `web` profile；仅有 base 的新自定义 profile 不满足这一前提。
 
@@ -39,7 +39,7 @@ DSH 的实际 bundle 契约与 CLI 安装行为依据本机 `0.1.7-rc.1` 的 `ds
 
 同一仓库可从 GitHub 标签和 npm 安装，无需手工复制两个文件或手工接入 ready。保留简单源码布局和宿主依赖，不新增运行依赖及发布自动化。
 
-代价是安装与配置分层：用户需要配置本机 Shell 路径，并按 bundle 粒度启停；精确 peer 声明要求宿主升级时复验。仓库没有远端，GitHub 命令保留明确的所有者占位符，npm 包名所有权和真实远端下载留到发布阶段；本次不推送或公开发布。
+代价是安装与配置分层：用户需要按需配置 Shell 路径，并按 bundle 粒度启停；不声明版本约束意味着宿主升级不再被安装检查拦下，兼容性只能靠升级后重跑验证来发现。仓库没有远端，GitHub 命令保留明确的所有者占位符，npm 包名所有权和真实远端下载留到发布阶段；本次不推送或公开发布。
 
 本机 DSH 安装含既有 Bash marker 修复，本仓库不附带该补丁。Windows Git Bash/ConPTY、PowerShell 真进程、完整 GUI/模型会话、未修改宿主及其他 DSH/Node 版本不在本次验证结论内。
 

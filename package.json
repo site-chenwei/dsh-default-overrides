@@ -1,6 +1,6 @@
 {
   "name": "dsh-default-overrides",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Configurable Bash and PowerShell overrides for the DSH standard preset.",
   "type": "module",
   "license": "MIT",
@@ -23,17 +23,6 @@
     "bash",
     "powershell"
   ],
-  "engines": {
-    "node": ">=24.15.0"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/dsh": "0.1.7-rc.1"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/dsh": {
-      "optional": true
-    }
-  },
   "publishConfig": {
     "access": "public"
   },

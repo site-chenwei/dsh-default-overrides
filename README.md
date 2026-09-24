@@ -28,12 +28,12 @@
 
 ## 环境要求
 
-- Node.js `>=24.15.0`，本机验证版本为 `24.15.0`。
-- DSH `0.1.7-rc.1`，目标 profile 包含官方 `standard` 预设，例如 `web`。
+- Node.js：验证基线为 `24.15.0`；插件不声明 `engines`，不做版本拦截。
+- DSH：验证基线为 `0.1.7-rc.1` 与 `0.1.7-rc.2`，目标 profile 需包含官方 `standard` 预设（例如 `web`）。
 - 安装插件的 DSH CLI 需要 PATH 中有 `pnpm`。
 - 当前面向 `danger-full-access` 使用场景。
 
-清单通过可选 peer 声明 DSH 精确版本，供宿主兼容性检查使用；可选标记避免包管理器自动安装另一套 DSH。升级宿主前需要重跑验证并更新此声明。源码通过宿主 Loader 解析官方包，没有独立运行依赖。
+插件不声明任何版本约束（没有 `peerDependencies`、没有 `engines`），因此宿主的兼容性检查与包管理器的引擎校验都不会拦截安装。代价是兼容性不再由安装环节把关：**升级 DSH 或 Node 后请重跑[验证](#验证)**，由验证结果判断是否仍兼容。源码通过宿主 Loader 解析官方包，不复制或另装一套 DSH 依赖。
 
 ## 安装
 
@@ -157,7 +157,7 @@ npm run verify:package -- `
 
 本机验证环境为 macOS、Node.js 24.15.0、DSH 0.1.7-rc.1。该 DSH 安装含既有 Bash marker 修复，本仓库不附带或修改宿主补丁，详见[运行契约记录](.agents/notes/implemented/bug-fix/2026-09-24-shell-channel-runtime-contracts.md)。
 
-Windows Git Bash/ConPTY、PowerShell 真进程与完整 GUI/模型会话未在此环境实测。声明精确版本也不构成对未修改 DSH 安装的完整兼容证明。
+Windows Git Bash/ConPTY、PowerShell 真进程与完整 GUI/模型会话未在此环境实测。由于插件不声明版本约束，验证通过也不构成对未修改 DSH 安装或其他 DSH/Node 版本的兼容承诺。
 
 ## 参考
 

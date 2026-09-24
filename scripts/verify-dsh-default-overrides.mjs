@@ -256,7 +256,7 @@ try {
       assert.deepEqual(selected.parameters.required, persistent ? ['command'] : ['command', 'description']);
       assert.match(selected.description, /Do not invoke/);
       assert.match(selected.parameters.properties.command.description, dialect === 'bash' ? /never use backslashes/ : /Quote paths containing spaces/);
-      if (!persistent) assert.match(selected.description, /run_in_background/);
+      if (!persistent) assert(selected.parameters.properties.run_in_background, '一次性 bash 必须暴露 run_in_background 参数');
       const context = modules['dsh-system-prompt'].renderContextSnapshot(before);
       assert(context.includes(dialect === 'bash' ? bashPath : pwshPath));
       assert(context.includes(persistent ? 'command only' : 'command and description'));
