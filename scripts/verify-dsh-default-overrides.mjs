@@ -22,6 +22,9 @@ const minimal = yaml.load(readFileSync(requireDsh.resolve('@deepseek-ai/dsh-web-
 const PRESET = new URL('./dsh-default-overrides.mjs', import.meta.url).href;
 const GROUP_ID = 'local-standard-persistent-shell';
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-shell-verify-')));
+// 垫片位于共享的系统临时目录；先清掉上次运行的残留，让"未启用不落盘"的断言可重复。
+const SHIM = join(tmpdir(), 'dsh-default-overrides-bashrc.sh');
+rmSync(SHIM, { force: true });
 const workspace = join(scratch, 'workspace');
 const moved = join(workspace, 'moved');
 mkdirSync(moved, { recursive: true });
@@ -140,7 +143,23 @@ try {
     [{ persona: { prefix: 42 } }, /persona\.prefix must be a string/],
     [{ persona: { complete: 'yes' } }, /persona\.complete must be a boolean/],
     [{ includeHarnessIdentity: 'no' }, /includeHarnessIdentity must be a boolean/],
+    [{ shellMode: 'bash', bashPath, normalizeWindowsPaths: 'yes' }, /normalizeWindowsPaths must be a boolean/],
+    [{ shellMode: 'pwsh', normalizeWindowsPaths: true }, /only applies to shellMode bash or persistent-bash/],
+    [{ normalizeWindowsPaths: true }, /only applies to shellMode bash or persistent-bash/],
   ]) await assert.rejects(() => registeredPreset(config), pattern);
+
+  assert.equal(existsSync(SHIM), false, 'the bash shim must not be written unless the option is enabled');
+  const oneShot = await registeredPreset({ shellMode: 'bash', bashPath, normalizeWindowsPaths: true });
+  const oneShotBackend = flatten(oneShot.plugins).find(row => row.id === 'gitbash-executor');
+  assert.equal(oneShotBackend.config.normalizeWindowsPaths, true);
+  assert.deepEqual(oneShotBackend.config.shellPath, bashPath);
+  const persistentRewrite = await registeredPreset({ shellMode: 'persistent-bash', bashPath, normalizeWindowsPaths: true });
+  const rewriteBackend = flatten(persistentRewrite.plugins).find(row => row.id === 'terminal-shell');
+  assert.deepEqual(rewriteBackend.config.shellArgs.slice(0, 2), ['--noprofile', '--rcfile']);
+  assert.equal(rewriteBackend.config.shellArgs.at(-1), '-i');
+  assert.equal(rewriteBackend.config.shellArgs[2], SHIM.replaceAll('\\', '/'));
+  assert.match(readFileSync(SHIM, 'utf8'), /eval\(\) \{ __dsh_default_overrides_eval "\$@"; \}/);
+  console.log('PASS: path normalization reaches the chosen backend and writes the shim only when enabled');
 
   for (const mode of ['persistent-bash', 'persistent-pwsh', 'bash', 'pwsh']) {
     const config = await registeredPreset({ shellMode: mode, bashPath, pwshPath, disabledTools: ['tool-web', 'tool-workflow'] });
@@ -218,6 +237,7 @@ try {
       assert(!before.tools.some(tool => tool.name === (dialect === 'bash' ? 'pwsh' : 'bash')));
       assert.deepEqual(selected.parameters.required, persistent ? ['command'] : ['command', 'description']);
       assert.match(selected.description, /Do not invoke/);
+      assert.match(selected.parameters.properties.command.description, dialect === 'bash' ? /never use backslashes/ : /Quote paths containing spaces/);
       if (!persistent) assert.match(selected.description, /run_in_background/);
       const context = modules['dsh-system-prompt'].renderContextSnapshot(before);
       assert(context.includes(dialect === 'bash' ? bashPath : pwshPath));
@@ -320,9 +340,24 @@ try {
     assert.match(assembly.tools.find(tool => tool.name === 'bash').description, /Do not invoke/, 'tool guidance must survive hiding the harness identity');
   } finally { await hiddenIdentity.dispose(); }
   console.log('PASS: includeHarnessIdentity false drops only the harness identity section');
+
+  const RAW_PATH_COMMAND = String.raw`printf '%s\n' C:\Users\chenwei\docs`;
+  const pathArgs = (mode, command) => ({ command, ...(mode === 'persistent-bash' ? {} : { description: 'Verify Windows path handling' }) });
+  for (const mode of ['bash', 'persistent-bash']) {
+    const plain = await runtime({ shellMode: mode, bashPath, pwshPath, disabledTools: ['tool-web'], timeoutMs: 10000 });
+    try {
+      assert.match(succeeded(await plain.execute('bash', pathArgs(mode, RAW_PATH_COMMAND))), /C:Userschenweidocs/, `${mode}: bash drops backslashes without the option`);
+    } finally { await plain.dispose(); }
+    const rewriting = await runtime({ shellMode: mode, bashPath, pwshPath, disabledTools: ['tool-web'], timeoutMs: 10000, normalizeWindowsPaths: true });
+    try {
+      assert.match(succeeded(await rewriting.execute('bash', pathArgs(mode, RAW_PATH_COMMAND))), /C:\/Users\/chenwei\/docs/, `${mode}: the option rewrites the path before bash parses it`);
+    } finally { await rewriting.dispose(); }
+  }
+  console.log('PASS: normalizeWindowsPaths rewrites Windows paths in one-shot bash and in the persistent PTY');
   console.log('Not exercised: a full GUI/model session or Windows ConPTY on this host. Live PowerShell runs only when the optional pwsh-path argument is supplied.');
 } finally {
   if (previousHome === undefined) delete process.env.DSH_HOME;
   else process.env.DSH_HOME = previousHome;
   rmSync(scratch, { recursive: true, force: true });
+  rmSync(SHIM, { force: true });
 }

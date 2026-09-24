@@ -12,6 +12,7 @@
 - 通过 `disabledTools` 按行 ID 禁用 `standard` 中的任意插件行。
 - 通过 `persona` 固定或替换 `standard` 的 persona 文本，其余标准指引与运行时上下文照常组装。
 - 通过 `includeHarnessIdentity` 隐藏全局 `harness:identity` 段，只去掉一句框架身份说明。
+- 通过 `normalizeWindowsPaths` 在命令进入 Bash 前把 Windows 反斜杠路径改写为正斜杠。
 - 通过内存补丁调整官方 `standard` 预设，保留 `minimal` 和其他预设。
 
 未配置任何选项时，本插件不改变官方预设：不切换 Shell、不禁用任何工具行、不改 persona，也不隐藏身份段。
@@ -65,6 +66,7 @@ dsh plugin --profile web add dsh-default-overrides
     persona:
       prefix: 'You are a helpful software engineer assistant.'
     includeHarnessIdentity: false
+    normalizeWindowsPaths: true
 ```
 
 Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并同时保留 `pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'`。切换时只修改 `shellMode`。DSH 对匹配行的 `config` 做整体替换，因此要保留仍需使用的配置字段。
@@ -75,6 +77,7 @@ Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并�
 | `disabledTools` | `[]` | `standard` 预设中要禁用的行 ID 数组；ID 不存在时直接报错。不设置时不禁用任何行 |
 | `persona` | 未设置 | 覆盖 `standard` 的 persona 行，字段见下。不设置时不修改 persona |
 | `includeHarnessIdentity` | 未设置 | 是否保留 `harness:identity` 段（`You are an AI agent powered by DeepSeek Harness.`）。不设置时不修改；`false` 隐藏该句 |
+| `normalizeWindowsPaths` | `false` | 仅 Bash 两模式：命令进入 bash 前把 `C:\a\b` 改写成 `C:/a/b`。设到其他模式会报错 |
 | `bashPath` | 未设置 | Bash 两模式必填，必须是存在的绝对文件路径 |
 | `pwshPath` | 未设置 | 建议显式填写以固定版本；未填写时委托官方 PowerShell 探测 |
 | `timeoutMs` | `300000` | 正整数。持久化模式为命令截止时间；一次性模式沿用官方等待、后台处理与上限 |
@@ -96,6 +99,15 @@ Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并�
 `includeHarnessIdentity` 作用于**全局** `system-prompt` 行（`dsh-base` 声明），而不是 `standard` 预设的 persona 行，因此影响该 profile 的所有预设与会话。写 `false` 只让模型少收到 `harness:identity` 这一段 `You are an AI agent powered by DeepSeek Harness.`，模型与 API、工具注册、Shell、团队/Goal/Workflow、沙箱与审批都不受影响；计划模式指引、工具说明、persona 与运行时上下文照常组装。本插件复用宿主 `@deepseek-ai/dsh-system-prompt` 的官方开关，不新造隐藏机制。
 
 该选项要生效，全局 `system-prompt` 行必须在插件就绪后再解析配置，因此 [bundle 补丁](cordis.patch.yml)为该行添加了 `dshDefaultOverridesReady` 等待。用户层若覆盖了该行的 `inject`，同样要保留这个信号。不使用该选项时这条等待仍然存在，代价只是启动顺序上的一次等待。
+
+`normalizeWindowsPaths` 解决 Windows 上 Bash 把反斜杠当转义符吃掉的问题：`cd C:\Users\me` 在 bash 里会变成 `cd C:Usersme` 而失败。开启后，`C:\a\b` 会在命令进入 bash **之前**被改写成 `C:/a/b`，一次性与持久化两种 Bash 模式都生效：
+
+- 只改写盘符开头的路径段；引号内的路径（含空格）一路改写到配对引号；`sed 's/\\d//'`、`"a\tb"` 这类正则与转义里的反斜杠不受影响。
+- UNC 路径（`\\server\share`）不在覆盖范围；若某条命令需要把 Windows 反斜杠路径当字面量传给只认反斜杠的原生程序（例如 `robocopy`），改写会改变它的含义，这类命令请关闭该选项或改用该程序可接受的写法。
+- 持久化模式通过给 `dsh-terminal-bash` 传官方 `shellArgs`、用 `--rcfile` 加载一个垫片实现（写在系统临时目录 `dsh-default-overrides-bashrc.sh`，每次启动重新生成）。垫片只在命令里出现 `X:\` 时才启动 node 做改写，其他命令原样透传。
+- 该改写依赖宿主持久化工具仍以 `eval --` 包装命令；宿主改版后垫片可能静默失效——命令照常执行，只是不再改写。
+
+工具说明与 `command` 参数说明里也写明了“不要使用反斜杠、含空格的路径要加引号”，与上面的确定性改写互为补充。
 
 只验证和使用当前模式对应的路径。一次性工具的前台等待超时可能将命令转为后台任务，并不等于杀死进程。配置后使用新会话验收，旧会话可能保留旧预设和 Shell 状态。
 
