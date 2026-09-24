@@ -113,6 +113,10 @@ export async function apply(ctx, options = {}) {
   }
   const persona = options.persona;
   if (persona !== undefined) verifyPersonaOption(persona);
+  const includeHarnessIdentity = options.includeHarnessIdentity;
+  if (includeHarnessIdentity !== undefined && typeof includeHarnessIdentity !== 'boolean') {
+    throw new Error('dsh-default-overrides: includeHarnessIdentity must be a boolean');
+  }
   const persistent = shellEnabled && mode.startsWith('persistent-');
   const dialect = mode === 'bash' || mode === 'persistent-bash' ? 'bash' : 'pwsh';
   const pathKey = dialect === 'bash' ? 'bashPath' : 'pwshPath';
@@ -128,9 +132,10 @@ export async function apply(ctx, options = {}) {
   if (shellEnabled && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)) {
     throw new Error('dsh-default-overrides: timeoutMs must be a positive safe integer');
   }
-  const [{ default: AgentPreset }, { applyEntryPatches }] = await Promise.all([
+  const [{ default: AgentPreset }, { applyEntryPatches }, { default: SystemPrompt }] = await Promise.all([
     ctx.loader.import('@deepseek-ai/dsh-agent-preset'),
     ctx.loader.import('@deepseek-ai/cordis-plugin-include'),
+    ctx.loader.import('@deepseek-ai/dsh-system-prompt'),
   ]);
   const patched = new WeakMap();
 
@@ -195,6 +200,10 @@ export async function apply(ctx, options = {}) {
 
   ctx.on('internal/config', function (_raw, next) {
     const config = next();
+    // Note: harness:identity 由全局 system-prompt 行注册，这里只改它的官方开关 — 见 .agents/notes/implemented/feature/2026-09-24-configurable-harness-identity.md。
+    if (this.runtime?.callback === SystemPrompt) {
+      return includeHarnessIdentity === undefined ? config : { ...config, includeHarnessIdentity };
+    }
     if (this.runtime?.callback !== AgentPreset || config.id !== 'standard') return config;
     if (patched.has(config)) return patched.get(config);
     if (!shellEnabled && disabledTools.length === 0 && persona === undefined) return config;

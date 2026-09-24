@@ -8,3 +8,10 @@
 - id: preset-standard
   inject:
     - dshDefaultOverridesReady
+
+# Note: harness:identity 由全局 system-prompt 行注册，只有该行等到 ready 后
+# 本插件才能改写它的 includeHarnessIdentity — 见 .agents/notes/implemented/feature/2026-09-24-configurable-harness-identity.md。
+# 该行自身没有 inject，因此这里只增加等待，不覆盖任何原有依赖。
+- id: system-prompt
+  inject:
+    - dshDefaultOverridesReady

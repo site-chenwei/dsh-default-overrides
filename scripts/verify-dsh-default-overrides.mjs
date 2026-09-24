@@ -79,14 +79,13 @@ async function runtime(config) {
     for (const name of ['dsh-agent', 'dsh-session-projection', 'dsh-subprocess-local']) await root.plugin(modules[name].default);
     await root.plugin(modules['dsh-sandbox-policy'].default, { mode: 'danger-full-access', workspaceRoot: workspace });
     await root.plugin(modules['dsh-tools'].default);
-    await root.plugin(modules['dsh-system-prompt'].default, { persona: '' });
     await root.plugin(modules['dsh-shell-env'], { dshHome: scratch });
     await root.plugin(modules['dsh-jobs-local'].default);
     await root.plugin(modules['dsh-agent-preset-registry'].default, { default: 'standard' });
     const declaration = withReady(standard);
     declaration.config.plugins = structuredClone(standard.config.plugins.filter(row => ['persona', 'tool-bash', 'tool-pwsh', 'tool-jobs', 'tool-web'].includes(row.id)));
     declaration.config.plugins.push({ id: 'tool-workflow', name: '@deepseek-ai/dsh-tool-workflow', disabled: true });
-    await root.loader.root.update([declaration, overrideRow(config)]);
+    await root.loader.root.update([{ id: 'system-prompt', name: '@deepseek-ai/dsh-system-prompt', config: { personaPrefix: '' }, inject: ['dshDefaultOverridesReady'] }, declaration, overrideRow(config)]);
     await settle(root);
     const id = SessionId(`shell-verify-${config.shellMode}`);
     const seed = Session.create(id);
@@ -140,6 +139,7 @@ try {
     [{ persona: { preifx: 'typo' } }, /unsupported keys/],
     [{ persona: { prefix: 42 } }, /persona\.prefix must be a string/],
     [{ persona: { complete: 'yes' } }, /persona\.complete must be a boolean/],
+    [{ includeHarnessIdentity: 'no' }, /includeHarnessIdentity must be a boolean/],
   ]) await assert.rejects(() => registeredPreset(config), pattern);
 
   for (const mode of ['persistent-bash', 'persistent-pwsh', 'bash', 'pwsh']) {
@@ -178,6 +178,7 @@ try {
 
   const shippedPersona = standard.config.plugins.find(row => row.id === 'persona');
   const PERSONA = 'You are a helpful software engineer assistant.';
+  const HARNESS_IDENTITY = 'You are an AI agent powered by DeepSeek Harness.';
   const personaRow = config => flatten(config.plugins).find(row => row.id === 'persona');
   const fixed = await registeredPreset({ persona: { prefix: PERSONA } });
   assert.deepEqual(personaRow(fixed).config, { ...shippedPersona.config, prefix: PERSONA, complete: false, includeRuntimeContext: true });
@@ -224,6 +225,7 @@ try {
       const prompt = modules['dsh-system-prompt'].renderPrompt(before);
       assert(prompt.includes(PERSONA), `${mode}: fixed persona reaches the rendered system prompt`);
       assert(prompt.includes('Verify persona suffix.'), `${mode}: configured persona suffix reaches the rendered system prompt`);
+      assert(prompt.includes(HARNESS_IDENTITY), `${mode}: harness identity stays by default`);
       assert(prompt.trim().length > PERSONA.length + 'Verify persona suffix.'.length, `${mode}: complete=false keeps other prompt sections`);
       const repeated = await harness.assemble();
       assert.equal(repeated.tools.find(tool => tool.name === dialect).description, selected.description, 'description does not accumulate');
@@ -306,6 +308,18 @@ try {
   } finally { await noEnvironment.dispose(); }
   assert.deepEqual({ ...process.env }, environmentBefore);
   console.log('PASS: envContext false preserves tool guidance; all isolated runtimes disposed');
+
+  const hiddenIdentity = await runtime({ shellMode: 'bash', bashPath, pwshPath, disabledTools: ['tool-web'], persona: { prefix: PERSONA, suffix: 'Verify persona suffix.' }, includeHarnessIdentity: false });
+  try {
+    const assembly = await hiddenIdentity.assemble();
+    const prompt = modules['dsh-system-prompt'].renderPrompt(assembly);
+    assert(!prompt.includes(HARNESS_IDENTITY), 'includeHarnessIdentity false must drop the harness identity section');
+    assert(prompt.includes(PERSONA), 'the configured persona must survive hiding the harness identity');
+    assert(prompt.includes('Verify persona suffix.'), 'the persona suffix must survive hiding the harness identity');
+    assert(modules['dsh-system-prompt'].renderContextSnapshot(assembly).includes(bashPath), 'runtime context must survive hiding the harness identity');
+    assert.match(assembly.tools.find(tool => tool.name === 'bash').description, /Do not invoke/, 'tool guidance must survive hiding the harness identity');
+  } finally { await hiddenIdentity.dispose(); }
+  console.log('PASS: includeHarnessIdentity false drops only the harness identity section');
   console.log('Not exercised: a full GUI/model session or Windows ConPTY on this host. Live PowerShell runs only when the optional pwsh-path argument is supplied.');
 } finally {
   if (previousHome === undefined) delete process.env.DSH_HOME;

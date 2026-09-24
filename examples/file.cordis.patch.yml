@@ -16,6 +16,8 @@
         # Override the standard persona row; unset fields keep their current values.
         persona:
           prefix: 'You are a helpful software engineer assistant.'
+        # Hide the global harness:identity section for the whole profile.
+        includeHarnessIdentity: false
 
 # Retain any other existing inject dependencies on preset-standard.
 - id: preset-standard

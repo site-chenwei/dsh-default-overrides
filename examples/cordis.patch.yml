@@ -15,6 +15,8 @@
     # Override the standard persona row; unset fields keep their current values.
     persona:
       prefix: 'You are a helpful software engineer assistant.'
+    # Hide the global harness:identity section for the whole profile.
+    includeHarnessIdentity: false
 
 # The bundle supplies preset-standard.inject. If another patch overrides inject,
 # retain dshDefaultOverridesReady alongside that patch's other dependencies.

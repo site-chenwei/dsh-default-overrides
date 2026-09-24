@@ -11,6 +11,7 @@
 - 模型说明与工具参数一致，补充当前方言及禁止套用其他 Shell 的操作规则。
 - 通过 `disabledTools` 按行 ID 禁用 `standard` 中的任意插件行；不配置时不动官方预设。
 - 通过 `persona` 固定或替换 `standard` 的 persona 文本，其余标准指引与运行时上下文照常组装。
+- 通过 `includeHarnessIdentity` 隐藏全局 `harness:identity` 段，只去掉一句框架身份说明。
 - 通过内存补丁调整官方 `standard` 预设，保留 `minimal` 和其他预设。
 
 未配置任何选项时，本插件不改变官方预设：不切换 Shell、不禁用任何工具行、不改 persona。
@@ -82,6 +83,7 @@ Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并�
 | `shellMode` | 未设置 | 四种取值见上表；不设置时保留官方 Shell 选择 |
 | `disabledTools` | `[]` | `standard` 预设中要禁用的行 ID 数组；ID 不存在时直接报错。不设置时不禁用任何行 |
 | `persona` | 未设置 | 覆盖 `standard` 的 persona 行，字段见下。不设置时不修改 persona |
+| `includeHarnessIdentity` | 未设置 | 是否保留 `harness:identity` 段（`You are an AI agent powered by DeepSeek Harness.`）。不设置时不修改；`false` 隐藏该句 |
 | `bashPath` | 未设置 | Bash 两模式必填，必须是存在的绝对文件路径 |
 | `pwshPath` | 未设置 | 建议显式填写以固定版本；未填写时委托官方 PowerShell 探测 |
 | `timeoutMs` | `300000` | 正整数。持久化模式为命令截止时间；一次性模式沿用官方等待、后台处理与上限 |
@@ -99,6 +101,10 @@ Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并�
 | `includeRuntimeContext` | `true` | 写 `false` 会抑制该 agent 作用域的运行时上下文快照 |
 
 行补丁整体替换 `config`，本插件先展开当前有效配置再覆盖你写出的字段，因此未写的字段（例如官方 suffix）会保留。`complete` 与 `includeRuntimeContext` 即使未写也会显式落成上表默认值，避免上游把提示词锁成单句。字段内的 `{{...}}` 按宿主已注册的变量严格插值，变量不存在会让组装报错。`persona` 至少写一个字段，键名或类型写错会在启动时直接报错。
+
+`includeHarnessIdentity` 作用于**全局** `system-prompt` 行（`dsh-base` 声明），而不是 `standard` 预设的 persona 行，因此影响该 profile 的所有预设与会话。写 `false` 只让模型少收到 `harness:identity` 这一段 `You are an AI agent powered by DeepSeek Harness.`，模型与 API、工具注册、Shell、团队/Goal/Workflow、沙箱与审批都不受影响；计划模式指引、工具说明、persona 与运行时上下文照常组装。本插件复用宿主 `@deepseek-ai/dsh-system-prompt` 的官方开关，不新造隐藏机制。
+
+该选项要生效，全局 `system-prompt` 行必须在插件就绪后再解析配置，因此 [bundle 补丁](cordis.patch.yml)为该行添加了 `dshDefaultOverridesReady` 等待。用户层若覆盖了该行的 `inject`，同样要保留这个信号。不使用该选项时这条等待仍然存在，代价只是启动顺序上的一次等待。
 
 只验证和使用当前模式对应的路径。一次性工具的前台等待超时可能将命令转为后台任务，并不等于杀死进程。配置后使用新会话验收，旧会话可能保留旧预设和 Shell 状态。
 

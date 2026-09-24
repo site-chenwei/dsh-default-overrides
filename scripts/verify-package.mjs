@@ -62,6 +62,7 @@ try {
   assert.deepEqual(warnings, []);
   const entry = entries.find(row => row.id === 'local-dsh-default-overrides');
   const standard = entries.find(row => row.id === 'preset-standard');
+  assert(entries.find(row => row.id === 'system-prompt').inject?.includes('dshDefaultOverridesReady'), 'the bundle patch must gate the global system-prompt row');
   assert.equal(entries.filter(row => row.id === entry.id).length, 1);
   assert.equal(entry.name, manifest.name);
   assert.deepEqual(entry.config, { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], persona: { prefix: 'You are a helpful software engineer assistant.' } });
