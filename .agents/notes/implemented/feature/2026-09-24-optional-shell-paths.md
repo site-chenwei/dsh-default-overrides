@@ -19,7 +19,7 @@ dsh: startup failed: 1 required plugin did not activate
 `bashPath` 与 `pwshPath` 都改为可选；省略时不再报错，按模式分别回退到官方默认：
 
 - `persistent-bash` / `persistent-pwsh`：继续挂官方 `dsh-terminal-bash`，只是不写 `shellPath`。该后端自带默认值——bash 用 `DEFAULT_BASH_SHELL`（`/bin/bash`），pwsh 用 `resolvePwshPath()` 探测。
-- `bash`（一次性）省略 `bashPath` 且未开启 `normalizeWindowsPaths`：插件**不产生任何 Shell 补丁**，官方 `tool-bash` 行与其宿主级沙箱执行器保持原样，等于官方默认行为（Windows 上官方默认给出 pwsh，因为官方 `tool-bash` 行在该平台被禁用）。
+- `bash`（一次性）省略 `bashPath` 且未开启 `normalizeWindowsPaths`：插件**不产生任何 Shell 补丁**，官方 `tool-bash` 行与其宿主级沙箱执行器保持原样，等于官方默认行为（Windows 上官方默认给出 pwsh，因为官方 `tool-bash` 行在该平台被禁用）。该回退只涉及 Shell 行与工具说明补充；提示词平面的环境事实段仍照常给出，见[环境事实段与 Shell 补丁解耦](../bug-fix/2026-09-25-environment-facts-in-every-shell-mode.md)。
 - `bash` 省略 `bashPath` 但开启 `normalizeWindowsPaths`：仍挂本插件的适配器（改写只在适配器里），适配器在 `shellPath` 未配置时不再猜路径，改为调用官方 `LocalBashExecutor.execute`，即官方默认 argv `["bash", "-c", command]`（`dsh-bash-local/lib/index.js:141`）。
 - `pwsh`（一次性）：沿用官方 `dsh-pwsh-local`，未配置路径时由该插件探测。
 

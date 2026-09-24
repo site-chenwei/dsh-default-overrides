@@ -101,16 +101,23 @@ function shellGuidance(dialect) {
     ].join(' ');
 }
 
-function environmentContext(mode, persistent, timeoutMs, hasWorkspace) {
-  return [
-    `Host platform: ${process.platform}. Shell mode: ${mode}. Executable: {{dsh_overrides_shell_path}}.`,
-    persistent
+/**
+ * 环境事实段：平台与工作区在任何配置下都成立；Shell 通道细节只在插件确实接管了该通道时声明。
+ * 未接管时宿主自己决定工具（fallback 在 Windows 上是 pwsh），所以不冒充方言、不声称本插件的 timeoutMs 生效。
+ */
+function environmentContext({ managed, mode, persistent, timeoutMs, hasWorkspace }) {
+  const lines = [managed
+    ? `Host platform: ${process.platform}. Shell mode: ${mode}. Executable: {{dsh_overrides_shell_path}}.`
+    : `Host platform: ${process.platform}. Shell channel: the host default for this platform; this plugin configured no shell.`];
+  if (managed) {
+    lines.push(persistent
       ? `Arguments: command only. Working directory, variables and functions persist while the shell stays alive. The command deadline is ${timeoutMs} ms; exit, timeout, cancellation or restart resets shell state.`
-      : 'Required arguments: command and description. Each call starts a fresh shell; use workdir for the working directory. Follow the tool schema for timeoutMs and background execution; a foreground wait timeout may promote the command to a background job.',
-    ...(hasWorkspace ? [
-      'Session workspace: {{dsh_overrides_workspace}}. File tools resolve relative paths from this workspace; a persistent shell may have changed its own directory.',
-    ] : []),
-  ].join('\n');
+      : 'Required arguments: command and description. Each call starts a fresh shell; use workdir for the working directory. Follow the tool schema for timeoutMs and background execution; a foreground wait timeout may promote the command to a background job.');
+  }
+  if (hasWorkspace) {
+    lines.push(`Session workspace: {{dsh_overrides_workspace}}. File tools resolve relative paths from this workspace.${managed && persistent ? ' A persistent shell may have changed its own directory.' : ''}`);
+  }
+  return lines.join('\n');
 }
 
 /** 拍平预设行，group 行自身也在结果中。 */
@@ -182,8 +189,16 @@ export async function apply(ctx, options = {}) {
   if (normalizeWindowsPaths && (!shellEnabled || dialect !== 'bash')) {
     throw new Error('dsh-default-overrides: normalizeWindowsPaths only applies to shellMode bash or persistent-bash');
   }
-  // 一次性 bash 既没配置路径也不需要改写时不挂任何补丁，提示词层也按官方默认处理 — 见 .agents/notes/implemented/feature/2026-09-24-optional-shell-paths.md。
+  const envContext = options.envContext;
+  if (envContext !== undefined && typeof envContext !== 'boolean') {
+    throw new Error('dsh-default-overrides: envContext must be a boolean');
+  }
+  // 一次性 bash 既没配置路径也不需要改写时不挂任何补丁 — 见 .agents/notes/implemented/feature/2026-09-24-optional-shell-paths.md。
   const officialBashFallback = shellEnabled && !persistent && dialect === 'bash' && shellPath === undefined && !normalizeWindowsPaths;
+  // managedShell：插件是否真的接管了这个方言通道（决定工具说明补充与 Shell 通道声明）。
+  const managedShell = shellEnabled && !officialBashFallback;
+  // 环境事实段是独立提示词选项：显式配置说了算；未配置时只在选了 Shell 模式才贡献（空配置仍是零影响）。
+  const environmentEnabled = envContext ?? shellEnabled;
   const [{ default: AgentPreset }, { applyEntryPatches }, { default: SystemPrompt }] = await Promise.all([
     ctx.loader.import('@deepseek-ai/dsh-agent-preset'),
     ctx.loader.import('@deepseek-ai/cordis-plugin-include'),
@@ -287,27 +302,33 @@ export async function apply(ctx, options = {}) {
     return result;
   }, { global: true });
 
-  if (shellEnabled && !officialBashFallback) {
+  // Note: 环境事实段与 Shell 补丁解耦，未接管通道时也必须给出平台与工作区 — 见 .agents/notes/implemented/bug-fix/2026-09-25-environment-facts-in-every-shell-mode.md。
+  if (managedShell || environmentEnabled) {
     ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
       const assembly = await next();
       const agent = context.agent;
       if (!agent || ctx.agentPresets.composedPreset(agent.ctx) !== 'standard') return assembly;
       const workspace = agent.session.header.cwd;
-      const tools = assembly.tools.map(tool => tool.name === dialect
-        ? { ...tool, description: `${tool.description}\n\n${shellGuidance(dialect)}`, parameters: commandParameterHint(tool.parameters, dialect) }
-        : tool);
-      if (options.envContext === false) return { ...assembly, tools };
+      const tools = managedShell
+        ? assembly.tools.map(tool => tool.name === dialect
+          ? { ...tool, description: `${tool.description}\n\n${shellGuidance(dialect)}`, parameters: commandParameterHint(tool.parameters, dialect) }
+          : tool)
+        : assembly.tools;
+      if (!environmentEnabled) return { ...assembly, tools };
+      const variables = { ...assembly.variables };
+      if (workspace !== undefined) variables.dsh_overrides_workspace = workspace;
+      // 只有本段真的引用 Shell 路径时才注册该变量，避免未接管通道时留下无载体的变量。
+      if (managedShell) variables.dsh_overrides_shell_path = shellPath ?? (dialect === 'bash' ? 'the official default bash (bashPath unset)' : 'auto-detected by the official PowerShell executor (pwshPath unset)');
       return {
         ...assembly,
         tools,
-        variables: {
-          ...assembly.variables,
-          dsh_overrides_shell_path: shellPath ?? (dialect === 'bash' ? 'the official default bash (bashPath unset)' : 'auto-detected by the official PowerShell executor (pwshPath unset)'),
-          ...(workspace === undefined ? {} : { dsh_overrides_workspace: workspace }),
-        },
+        variables,
         contexts: [
           ...assembly.contexts.filter(section => section.name !== ENVIRONMENT_SECTION),
-          { name: ENVIRONMENT_SECTION, text: environmentContext(mode, persistent, timeoutMs, workspace !== undefined) },
+          {
+            name: ENVIRONMENT_SECTION,
+            text: environmentContext({ managed: managedShell, mode, persistent, timeoutMs, hasWorkspace: workspace !== undefined }),
+          },
         ],
       };
     }, { global: true });

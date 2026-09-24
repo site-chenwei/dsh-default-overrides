@@ -142,6 +142,7 @@ try {
     [{ persona: { prefix: 42 } }, /persona\.prefix must be a string/],
     [{ persona: { complete: 'yes' } }, /persona\.complete must be a boolean/],
     [{ includeHarnessIdentity: 'no' }, /includeHarnessIdentity must be a boolean/],
+    [{ envContext: 'yes' }, /envContext must be a boolean/],
     [{ shellMode: 'bash', bashPath, normalizeWindowsPaths: 'yes' }, /normalizeWindowsPaths must be a boolean/],
     [{ shellMode: 'pwsh', normalizeWindowsPaths: true }, /only applies to shellMode bash or persistent-bash/],
     [{ normalizeWindowsPaths: true }, /only applies to shellMode bash or persistent-bash/],
@@ -346,6 +347,64 @@ try {
   } finally { await noEnvironment.dispose(); }
   assert.deepEqual({ ...process.env }, environmentBefore);
   console.log('PASS: envContext false preserves tool guidance; all isolated runtimes disposed');
+
+  // 环境事实段与 Shell 补丁解耦：长期可用的每种组合都要给出可核对的文本（见 note environment-facts-in-every-shell-mode）。
+  // 夹具里官方 tool-bash 没有 shell 提供者（真实宿主由 bash-sandbox 提供），因此统一禁用 tool-web/tool-bash：
+  // "工具表与基线逐字段相同"就是"未托管通道时提示词平面未被改写"的证据。
+  const OFFICIAL_FREE = ['tool-web', 'tool-bash'];
+  const environmentSection = assembly => assembly.contexts.find(section => section.name === 'local:dsh-default-overrides:environment');
+  async function environmentFacts(config) {
+    const harness = await runtime(config);
+    try {
+      const assembly = await harness.assemble();
+      return {
+        section: environmentSection(assembly),
+        context: modules['dsh-system-prompt'].renderContextSnapshot(assembly),
+        tools: JSON.stringify(assembly.tools),
+      };
+    } finally { await harness.dispose(); }
+  }
+  const bare = await environmentFacts({ disabledTools: OFFICIAL_FREE });
+  assert.equal(bare.section, undefined, '未配置 shellMode 时默认不得贡献环境段（空配置仍是零影响）');
+
+  const envOnly = await environmentFacts({ disabledTools: OFFICIAL_FREE, envContext: true });
+  assert(envOnly.section, '显式 envContext: true 在未配置 Shell 时也必须贡献环境段');
+  assert.match(envOnly.context, /Host platform: /);
+  assert(envOnly.context.includes(workspace), '未配置 Shell 时仍必须给出会话工作区');
+  assert.doesNotMatch(envOnly.context, /Shell mode: /, '未配置 Shell 时不得声明方言');
+  assert.doesNotMatch(envOnly.context, /command deadline/, '未托管通道时不得声称本插件的命令截止时间');
+  assert.equal(envOnly.tools, bare.tools, '未配置 Shell 时不得改写工具表');
+
+  const fallback = await environmentFacts({ disabledTools: OFFICIAL_FREE, shellMode: 'bash' });
+  assert(fallback.section, 'officialBashFallback 下环境段必须仍然存在');
+  assert.match(fallback.context, /Host platform: /);
+  assert.match(fallback.context, /host default for this platform; this plugin configured no shell/);
+  assert(fallback.context.includes(workspace));
+  assert.doesNotMatch(fallback.context, /Shell mode: bash/, 'fallback 下不得冒充 bash 方言（Windows 上官方给的是 pwsh）');
+  assert.doesNotMatch(fallback.context, /command deadline/, 'fallback 下 timeoutMs 不生效，不得声明截止时间');
+  assert.equal(fallback.tools, bare.tools, 'fallback 下不得改写工具表');
+  for (const [label, facts] of [['env only', envOnly], ['fallback', fallback]]) {
+    assert.doesNotMatch(facts.context, /\{\{/, `${label}: 环境段引用的变量必须都已注册`);
+  }
+
+  const fallbackOff = await environmentFacts({ disabledTools: OFFICIAL_FREE, shellMode: 'bash', envContext: false });
+  assert.equal(fallbackOff.section, undefined, 'envContext false 在 fallback 下同样不得贡献环境段');
+  assert.equal(fallbackOff.tools, bare.tools);
+
+  const managedPersistent = await environmentFacts({ disabledTools: OFFICIAL_FREE, shellMode: 'persistent-bash', timeoutMs: 12000 });
+  assert.match(managedPersistent.context, /Shell mode: persistent-bash/, '托管持久化通道时必须声明方言');
+  assert.match(managedPersistent.context, /command deadline is 12000 ms/, '托管持久化通道时必须声明本插件的截止时间');
+  assert.match(managedPersistent.context, /may have changed its own directory/, '只有持久化通道才需要 cwd 分叉提醒');
+  assert.match(managedPersistent.context, /official default bash \(bashPath unset\)/, '未配置路径时必须说明走官方默认终端');
+
+  const managedOneShot = await environmentFacts({ disabledTools: OFFICIAL_FREE, shellMode: 'bash', bashPath, timeoutMs: 12000 });
+  assert.match(managedOneShot.context, /Shell mode: bash/);
+  assert(managedOneShot.context.includes(bashPath), '托管一次性通道时必须给出实际可执行文件');
+  assert.match(managedOneShot.context, /command and description/);
+  assert.doesNotMatch(managedOneShot.context, /command deadline/, '一次性模式沿用官方等待与上限，不得声明本插件截止时间');
+  assert.doesNotMatch(managedOneShot.context, /may have changed its own directory/, '一次性模式每次新 Shell，不需要 cwd 分叉提醒');
+  assert.notEqual(managedOneShot.tools, bare.tools, '托管通道时才会补充工具说明与参数提示');
+  console.log('PASS: environment facts stay correct across every shell-mode and envContext combination');
 
   const hiddenIdentity = await runtime({ shellMode: 'bash', bashPath, pwshPath, disabledTools: ['tool-web'], persona: { prefix: PERSONA, suffix: 'Verify persona suffix.' }, includeHarnessIdentity: false });
   try {

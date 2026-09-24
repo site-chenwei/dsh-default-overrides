@@ -12,6 +12,7 @@
 - 通过 `disabledTools` 按行 ID 禁用 `standard` 中的任意插件行。
 - 通过 `persona` 固定或替换 `standard` 的 persona 文本，其余标准指引与运行时上下文照常组装。
 - 通过 `includeHarnessIdentity` 隐藏全局 `harness:identity` 段，只去掉一句框架身份说明。
+- 通过 `envContext` 补充环境事实段：平台与工作区始终给出，Shell 通道细节只在本插件确实接管该通道时给出。
 - 通过 `normalizeWindowsPaths` 在命令进入 Bash 前把 Windows 反斜杠路径改写为正斜杠。
 - 通过内存补丁调整官方 `standard` 预设，保留 `minimal` 和其他预设。
 
@@ -73,6 +74,8 @@ Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并�
 
 **两条路径都可省略。** 只写 `shellMode: persistent-bash` 时会用官方默认终端（`/bin/bash`）启动持久化会话；`persistent-pwsh` 省略 `pwshPath` 时由官方探测 PowerShell。一次性模式省略 `bashPath` 且未开启 `normalizeWindowsPaths` 时，插件完全不改官方 Shell 行，等于官方默认行为（Windows 上官方默认给出的是 pwsh）；省略 `bashPath` 但需要路径改写时，改写走官方默认的 `bash -c`。
 
+Shell 补丁与提示词平面互不牵连：**未接管通道时（含上述两种回退）插件不改官方工具说明，但环境事实段照常给出**——只声明平台、会话工作区，以及"通道由宿主默认提供、本插件未配置"。这样 Windows 上回退到官方 pwsh 时不会被误标成 bash，也不会声称本插件的 `timeoutMs` 生效。
+
 | 字段 | 默认值 | 说明 |
 |---|---|---|
 | `shellMode` | 未设置 | 四种取值见上表；不设置时保留官方 Shell 选择 |
@@ -83,7 +86,7 @@ Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并�
 | `bashPath` | 未设置 | 可选。显式指定 Bash 可执行文件（Windows 上通常要指向 Git Bash）；省略时持久化模式用官方默认 `/bin/bash`，一次性模式在无需改写时保持官方行不动 |
 | `pwshPath` | 未设置 | 可选。建议显式填写以固定版本；省略时委托官方 PowerShell 探测 |
 | `timeoutMs` | `300000` | 正整数。持久化模式为命令截止时间；一次性模式沿用官方等待、后台处理与上限 |
-| `envContext` | `true` | 是否向模型添加模式、配置路径和会话工作区；关闭后仍保留工具操作规则 |
+| `envContext` | 未设置（选了 `shellMode` 时按 `true`） | 是否向模型添加环境事实段：平台与工作区始终给出，Shell 通道细节（模式、可执行文件、参数语义、截止时间）只在本插件确实接管了该通道时给出。显式写 `true` 时即使未配置 Shell 也会贡献平台与工作区；显式写 `false` 不贡献该段但仍保留工具操作规则；什么都不配置时本插件零影响 |
 
 `disabledTools` 按 `standard` 预设的行 ID 生效，包含分组内的行。常用 ID 有 `tool-web`、`tool-workflow`、`tool-ralph`、`skill-filesystem`；完整列表见安装中 `@deepseek-ai/dsh-web-app/presets/standard.patch.yml` 的 `config.plugins`。本插件只做 `disabled: true`，不改变这些行的其他配置。
 
@@ -151,7 +154,7 @@ npm run verify:package -- `
   'C:/Program Files/PowerShell/7/pwsh.exe'
 ```
 
-运行验证覆盖四模式注册与路径传递、工具参数与提示、persona 与 `harness:identity` 的真实提示词组装、预设范围、ready 重载、Bash 真进程、持久化 PTY、状态/退出码、后台失败与取消。未提供 PowerShell 路径时只检查 Pwsh 注册与启动参数，并明确跳过实跑。
+运行验证覆盖四模式注册与路径传递、工具参数与提示、persona 与 `harness:identity` 的真实提示词组装、环境事实段在每种 `shellMode` × `envContext` 组合下的文本与工具表、预设范围、ready 重载、Bash 真进程、持久化 PTY、状态/退出码、后台失败与取消。未提供 PowerShell 路径时只检查 Pwsh 注册与启动参数，并明确跳过实跑。
 
 ### 已验证边界
 
