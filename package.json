@@ -1,0 +1,11 @@
+{
+  "name": "dsh-default-overrides",
+  "private": true,
+  "description": "Configurable Bash and PowerShell overrides for the DSH standard preset.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "check": "node --check dsh-default-overrides.mjs && node --check gitbash-executor.mjs && node --check verify-dsh-default-overrides.mjs",
+    "verify": "node verify-dsh-default-overrides.mjs"
+  }
+}

@@ -1,0 +1,16 @@
+# Merge into your DSH host profile patch; replace paths with your actual locations.
+# Update an existing local-dsh-default-overrides entry instead of inserting a duplicate.
+- insert:
+    - id: local-dsh-default-overrides
+      name: 'file:///C:/Tools/dsh-default-overrides/dsh-default-overrides.mjs'
+      config:
+        shellMode: persistent-bash
+        bashPath: 'C:/Program Files/Git/bin/bash.exe'
+        pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'
+        timeoutMs: 300000
+        envContext: true
+
+# Retain any other existing inject dependencies on preset-standard.
+- id: preset-standard
+  inject:
+    - dshDefaultOverridesReady
