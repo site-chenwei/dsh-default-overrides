@@ -1,20 +1,20 @@
 # DSH Default Overrides
 
-为 DeepSeek Harness（DSH）的 `standard` 预设配置 Bash / PowerShell 执行通道。支持一次性和持久化模式，分别配置 `bashPath` 与 `pwshPath`，复用宿主 DSH 的官方执行器与工具。
+为 DeepSeek Harness（DSH）的 `standard` 预设做可配置覆盖：选择 Bash / PowerShell 执行通道，并按需禁用预设行、固定 persona、隐藏框架身份说明。所有改动都只作用于内存中的预设配置，不修改 DSH 安装包。
 
-这是可通过 GitHub 或 npm 安装的 DSH **bundle 插件**。源码直接运行，无需编译或安装脚本；DSH 从 [package.json](package.json) 的 `dsh.bundle.patch` 读取[插件补丁](cordis.patch.yml)，自动接入插件和预设 ready 依赖。
+四种 Shell 模式复用宿主官方执行器与工具；其余选项通过行补丁改写官方 `standard` 预设。这是可通过 GitHub 或 npm 安装的 DSH **bundle 插件**：源码直接运行，无需编译或安装脚本，DSH 从 [package.json](package.json) 的 `dsh.bundle.patch` 读取[插件补丁](cordis.patch.yml)，自动完成插件插入与 ready 接线。
 
 ## 功能范围
 
 - 四种 Shell 模式，每次只向模型暴露所选方言的一个 Shell 工具。
 - 两条可执行文件路径可以同时保留；显式路径会传给对应后端，路径无效直接报错。
 - 模型说明与工具参数一致，补充当前方言及禁止套用其他 Shell 的操作规则。
-- 通过 `disabledTools` 按行 ID 禁用 `standard` 中的任意插件行；不配置时不动官方预设。
+- 通过 `disabledTools` 按行 ID 禁用 `standard` 中的任意插件行。
 - 通过 `persona` 固定或替换 `standard` 的 persona 文本，其余标准指引与运行时上下文照常组装。
 - 通过 `includeHarnessIdentity` 隐藏全局 `harness:identity` 段，只去掉一句框架身份说明。
 - 通过内存补丁调整官方 `standard` 预设，保留 `minimal` 和其他预设。
 
-未配置任何选项时，本插件不改变官方预设：不切换 Shell、不禁用任何工具行、不改 persona。
+未配置任何选项时，本插件不改变官方预设：不切换 Shell、不禁用任何工具行、不改 persona，也不隐藏身份段。
 
 | `shellMode` | 使用的路径 | 模型工具 | 状态 |
 |---|---|---|---|
@@ -36,15 +36,15 @@
 
 ## 安装
 
-以下远端安装命令在仓库或 npm 包发布后使用；当前代码改造本身不代表已经发布。`YOUR_GITHUB_USER` 是需要替换的 GitHub 所有者，`web` 要替换为实际使用的 profile。首次安装会将 bundle 自动加入该 profile 的 `dsh.profile.bundles`。
+`YOUR_GITHUB_USER` 替换为实际 GitHub 所有者，`web` 替换为实际使用的 profile。首次安装会把 bundle 自动加入该 profile 的 `dsh.profile.bundles`。
 
-从 npm 安装：
+从 npm 安装最新版本：
 
 ```sh
-dsh plugin --profile web add dsh-default-overrides@0.2.0
+dsh plugin --profile web add dsh-default-overrides
 ```
 
-或从 GitHub 的版本标签安装：
+或从 GitHub 的版本标签安装（标签与 [package.json](package.json) 的版本一致）：
 
 ```sh
 dsh plugin --profile web add 'github:YOUR_GITHUB_USER/dsh-default-overrides#v0.2.0'
@@ -52,15 +52,13 @@ dsh plugin --profile web add 'github:YOUR_GITHUB_USER/dsh-default-overrides#v0.2
 
 也可在 DSH 插件管理器中安装相同包规格。包内只有可直接加载的源码，没有 `prepare` / `postinstall` 脚本，无需批准本插件的依赖构建。
 
-安装后完整重启 DSH，再新建 `standard` 会话。**默认不改变官方预设**：既不切换 Shell，也不禁用工具行，需要哪些行为就在 profile 补丁里显式配置。
+安装后完整重启 DSH，再新建 `standard` 会话。**默认不改变官方预设**：既不切换 Shell，也不禁用工具行、不改 persona、不隐藏身份段，需要哪些行为就在 profile 补丁里显式配置。
 
 自定义 profile 的 bundle 顺序必须让本插件位于提供 `preset-standard` 的 bundle 之后；正常 `web` profile 安装会自动追加。已有文件 URL 部署请先按[迁移说明](dsh-default-overrides-migration.md)移除旧插入行，避免重复实例。
 
 ## 配置
 
-将以下内容合并到实际 profile 的 `cordis.patch.yml`（位置为 `$DSH_HOME/profiles/<profile>/cordis.patch.yml`）。这里只覆盖 bundle 已创建的条目，不使用 `insert`。Windows 完整示例见 [examples/cordis.patch.yml](examples/cordis.patch.yml)。
-
-macOS Bash 示例：
+将配置合并到实际 profile 的 `cordis.patch.yml`（位置为 `$DSH_HOME/profiles/<profile>/cordis.patch.yml`）。这里只覆盖 bundle 已创建的条目，不使用 `insert`。下面列出全部配置面，按需删减，未写出的选项保持默认；Windows 路径示例见 [examples/cordis.patch.yml](examples/cordis.patch.yml)。
 
 ```yaml
 - id: local-dsh-default-overrides
@@ -74,6 +72,7 @@ macOS Bash 示例：
       - tool-workflow
     persona:
       prefix: 'You are a helpful software engineer assistant.'
+    includeHarnessIdentity: false
 ```
 
 Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并同时保留 `pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'`。切换时只修改 `shellMode`。DSH 对匹配行的 `config` 做整体替换，因此要保留仍需使用的配置字段。
@@ -146,7 +145,7 @@ npm run verify:package -- `
   'C:/Program Files/PowerShell/7/pwsh.exe'
 ```
 
-运行验证覆盖四模式注册与路径传递、工具参数与提示、预设范围、ready 重载、Bash 真进程、持久化 PTY、状态/退出码、后台失败与取消。未提供 PowerShell 路径时只检查 Pwsh 注册与启动参数，并明确跳过实跑。
+运行验证覆盖四模式注册与路径传递、工具参数与提示、persona 与 `harness:identity` 的真实提示词组装、预设范围、ready 重载、Bash 真进程、持久化 PTY、状态/退出码、后台失败与取消。未提供 PowerShell 路径时只检查 Pwsh 注册与启动参数，并明确跳过实跑。
 
 ### 已验证边界
 
@@ -161,7 +160,7 @@ Windows Git Bash/ConPTY、PowerShell 真进程与完整 GUI/模型会话未在�
 3. 提交源码并创建与包版本一致的标签，例如 `git tag v0.2.0`，自行推送提交和标签到 GitHub。GitHub 用户可以直接安装该标签，不需要先发布 npm。
 4. 需要 npm 分发时，使用有权限的 npm 账号登录后执行 `npm publish`。`prepack` 会运行语法检查，发布不依赖本机 DSH 路径。
 
-本地也可运行 `npm pack`，再用 `dsh plugin --profile web add ./dsh-default-overrides-0.2.0.tgz` 安装产物。打出的压缩包不必提交到 Git。
+本地也可运行 `npm pack` 打出 tarball，再用 `dsh plugin --profile web add ./dsh-default-overrides-<版本>.tgz` 安装产物。打出的压缩包不必提交到 Git。
 
 分发设计见[bundle 决定](.agents/notes/implemented/architecture/2026-09-24-distributable-dsh-bundle.md)，迁入依据见[独立仓库决定](.agents/notes/implemented/architecture/2026-09-24-standalone-plugin-repository.md)。实现参考 [router-standard](https://github.com/yjh051108/dsh-routing-suite/tree/main/preset/router-standard) 和 [dsh-win32](https://github.com/sjh9714/dsh-win32/blob/00a9e0023883ffa4014203ba3932a1e697f52324/src/verify.ts)，执行契约以实际安装的 DSH 为准。
 

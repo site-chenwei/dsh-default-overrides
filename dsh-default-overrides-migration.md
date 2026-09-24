@@ -14,6 +14,10 @@
 
 `disabledTools` 取值为 `standard` 预设的行 ID。原本被禁用但现在不想保留的行直接从此列表删除即可；ID 写错会在启动时直接报错，不会静默失效。详细取舍见[可配置禁用清单决定](.agents/notes/implemented/feature/2026-09-24-configurable-disabled-tools.md)。
 
+同一版本新增的 `persona` 与 `includeHarnessIdentity` 都是可选配置，不写就保持官方预设与宿主默认，因此升级不需要额外动作；需要固定人设或隐藏框架身份说明时见 [README 配置](README.md#配置)。
+
+bundle 会为全局 `system-prompt` 行添加 `dshDefaultOverridesReady` 等待，用户层若覆盖过该行的 `inject`，需要把 `dshDefaultOverridesReady` 与原有依赖一起保留。
+
 ## 从文件部署迁移到 bundle
 
 1. 备份现用 profile 补丁，保存旧入口的 `config`。从补丁中删除插入 `local-dsh-default-overrides` 的旧 `insert` 行；若旧命名仍在使用，也要移除对应活动入口。
