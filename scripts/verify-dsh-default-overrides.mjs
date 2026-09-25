@@ -1,15 +1,23 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { normalizeWindowsPaths } from './command-paths.mjs';
+import { BASH_RUNTIME_SERVICE } from './bash-runtime.mjs';
+import { verifyBashRuntime } from './verify-bash-runtime.mjs';
 
 // Usage: node scripts/verify-dsh-default-overrides.mjs <dsh-install-dir> <bash-path> [pwsh-path]
 // An omitted pwsh-path verifies wiring with a distinct executable, never claims live Pwsh acceptance.
-const [installation, bashPath, livePwshPath] = process.argv.slice(2);
-if (!installation || !bashPath) throw new Error('Usage: node scripts/verify-dsh-default-overrides.mjs <dsh-install-dir> <bash-path> [pwsh-path]');
+const cli = process.argv.slice(2);
+const windowsOnly = cli[0] === '--windows';
+if (windowsOnly) cli.shift();
+const onWindows = process.platform === 'win32';
+if (windowsOnly && !onWindows) throw new Error('Windows acceptance requires a physical Windows host; this is not a simulated pass');
+const [installation, inputBashPath, livePwshPath] = cli;
+if (!installation || !inputBashPath) throw new Error('Usage: node scripts/verify-dsh-default-overrides.mjs [--windows] <dsh-install-dir> <bash-path> [pwsh-path]');
+const bashPath = resolve(inputBashPath);
 const requireDsh = createRequire(pathToFileURL(join(installation, 'package.json')).href);
 const load = name => import(pathToFileURL(requireDsh.resolve(`@deepseek-ai/${name}`)).href);
 const [{ Context }, { default: Loader, Group }, { entryListSchema }, yaml, { Session, SessionId }, scopeModule] = await Promise.all([
@@ -26,11 +34,15 @@ const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-shell-verify-')));
 // 垫片位于共享的系统临时目录；先清掉上次运行的残留，让"未启用不落盘"的断言可重复。
 const SHIM = join(tmpdir(), 'dsh-default-overrides-bashrc.sh');
 rmSync(SHIM, { force: true });
-const workspace = join(scratch, 'workspace');
+const workspace = join(scratch, "workspace 中文 ' $");
 const moved = join(workspace, 'moved');
 mkdirSync(moved, { recursive: true });
 const previousHome = process.env.DSH_HOME;
 process.env.DSH_HOME = scratch;
+const pathKey = Object.keys(process.env).sort().find(key => key.toLowerCase() === 'path') ?? 'PATH';
+const previousPath = process.env[pathKey];
+// 仅当前验证进程：让默认入口用例确定地找到用户提供的 Bash。
+if (onWindows) process.env[pathKey] = `${dirname(bashPath)};${previousPath ?? ''}`;
 const environmentBefore = { ...process.env };
 const pwshPath = livePwshPath ?? process.execPath;
 assert.notEqual(bashPath, pwshPath, 'use different Bash/Pwsh paths to detect cross-family routing');
@@ -136,9 +148,10 @@ function quoteBash(value) { return `'${value.replaceAll('\\', '/').replaceAll("'
 function quotePwsh(value) { return `'${value.replaceAll("'", "''")}'`; }
 
 try {
+  await verifyBashRuntime(installation, bashPath);
   for (const [config, pattern] of [
     [{ shellMode: 'fish' }, /must be one of/],
-    [{ shellMode: 'bash', bashPath: join(scratch, 'missing') }, /bashPath must name/],
+    ...(!onWindows ? [[{ shellMode: 'bash', bashPath: join(scratch, 'missing') }, /bashPath must name/]] : []),
     [{ shellMode: 'pwsh', pwshPath: join(scratch, 'missing') }, /pwshPath must name/],
     [{ shellMode: 'bash', bashPath, timeoutMs: -1 }, /positive safe integer/],
     [{ shellMode: 'bash', shellPath: bashPath }, /shellPath was split/],
@@ -158,7 +171,8 @@ try {
   ]) await assert.rejects(() => registeredPreset(config), pattern);
 
   assert.deepEqual(await registeredPreset({ normalizeWindowsPaths: 'unused', bashPath: 'unused', pwshPath: 'unused', timeoutMs: -1 }), standard.config);
-  assert.deepEqual(await registeredPreset({ shellMode: 'bash', timeoutMs: -1 }), standard.config, '官方回退不使用本插件的 timeoutMs');
+  if (onWindows) await assert.rejects(() => registeredPreset({ shellMode: 'bash', timeoutMs: -1 }), /positive safe integer/);
+  else assert.deepEqual(await registeredPreset({ shellMode: 'bash', timeoutMs: -1 }), standard.config, '官方回退不使用本插件的 timeoutMs');
   for (const shellMode of ['pwsh', 'persistent-pwsh']) {
     const baseline = await registeredPreset({ shellMode, pwshPath });
     for (const normalizeWindowsPaths of [true, 'unused']) {
@@ -188,7 +202,13 @@ try {
     assert.equal(backend.config.shellDialect, mode.includes('bash') ? 'bash' : 'pwsh');
     assert.equal(backend.config.shellArgs, undefined);
   }
-  assert.deepEqual(await registeredPreset({ shellMode: 'bash' }), standard.config, '一次性 bash 未配置路径时保持官方行不动');
+  if (onWindows) {
+    const unavailable = await registeredPreset({ shellMode: 'bash', bashPath: join(scratch, 'missing') });
+    assert(flatten(unavailable.plugins).some(row => row.id === 'gitbash-executor'), '入口可用性延迟到该执行器初始化，不阻断全局注册');
+  }
+  const defaultBashPreset = await registeredPreset({ shellMode: 'bash' });
+  if (onWindows) assert(flatten(defaultBashPreset.plugins).some(row => row.id === 'gitbash-executor'));
+  else assert.deepEqual(defaultBashPreset, standard.config, '非 Windows 一次性 bash 未配置路径时保持官方行不动');
   const pwshDefault = await registeredPreset({ shellMode: 'pwsh' });
   const pwshBackend = flatten(pwshDefault.plugins).find(row => row.id === 'pwsh-executor');
   assert.equal(pwshBackend.config.pwshPath, undefined, '一次性 pwsh 未配置路径时交给官方探测');
@@ -197,7 +217,7 @@ try {
   const defaultBackend = flatten(bashDefault.plugins).find(row => row.id === 'gitbash-executor');
   assert.equal(defaultBackend.config.shellPath, undefined, '无路径但需要改写时仍挂适配器，由其沿用官方默认 argv');
   assert.equal(defaultBackend.config.normalizeWindowsPaths, true);
-  console.log('PASS: bashPath and pwshPath are optional and fall back to official defaults');
+  console.log('PASS: bashPath and pwshPath are optional with platform-specific default resolution');
 
   for (const mode of ['persistent-bash', 'persistent-pwsh', 'bash', 'pwsh']) {
     const config = await registeredPreset({ shellMode: mode, bashPath, pwshPath, disabledTools: ['tool-web', 'tool-workflow'] });
@@ -206,7 +226,7 @@ try {
     const persistent = mode.startsWith('persistent-');
     const dialect = mode.includes('bash') ? 'bash' : 'pwsh';
     const selectedPath = dialect === 'bash' ? bashPath : pwshPath;
-    assert.deepEqual(group.isolate, persistent ? { terminals: true } : { shell: true });
+    assert.deepEqual(group.isolate, { ...(persistent ? { terminals: true } : { shell: true }), ...(onWindows && dialect === 'bash' ? { [BASH_RUNTIME_SERVICE]: true } : {}) });
     assert.equal(rows.filter(row => row.id === GROUP_ID).length, 1);
     for (const id of ['tool-bash', 'tool-pwsh', 'tool-web', 'tool-workflow']) assert.equal(rows.find(row => row.id === id).disabled, true);
     const backend = group.config.find(row => row.id === (persistent ? 'terminal-shell' : dialect === 'bash' ? 'gitbash-executor' : 'pwsh-executor'));
@@ -275,7 +295,7 @@ try {
       assert(!before.tools.some(tool => tool.name === (dialect === 'bash' ? 'pwsh' : 'bash')));
       assert.deepEqual(selected.parameters.required, persistent ? ['command'] : ['command', 'description']);
       assert.match(selected.description, /Do not invoke/);
-      assert.match(selected.parameters.properties.command.description, dialect === 'bash' ? /never use backslashes/ : /Quote paths containing spaces/);
+      assert.match(selected.parameters.properties.command.description, dialect === 'bash' ? /Use Bash quoting/ : /Quote paths containing spaces/);
       if (!persistent) assert(selected.parameters.properties.run_in_background, '一次性 bash 必须暴露 run_in_background 参数');
       const context = modules['dsh-system-prompt'].renderContextSnapshot(before);
       assert(context.includes(dialect === 'bash' ? bashPath : pwshPath));
@@ -288,6 +308,17 @@ try {
       const repeated = await harness.assemble();
       assert.equal(repeated.tools.find(tool => tool.name === dialect).description, selected.description, 'description does not accumulate');
       assert.deepEqual(repeated.tools.find(tool => tool.name === dialect).parameters, selected.parameters);
+      if (onWindows && dialect === 'bash') {
+        const runtime = root.agentPresets.serviceFor(agent, BASH_RUNTIME_SERVICE);
+        const facts = await runtime.inspect(agent);
+        assert.equal(facts, await runtime.inspect(agent), 'verified facts are cached');
+        assert.equal(facts.executable, bashPath);
+        assert.equal(facts.family, 'msys');
+        assert.match(selected.description, /Verified Bash environment: MSYS/);
+        assert.match(selected.parameters.properties.command.description, /MSYS2_ARG_CONV_EXCL/);
+        if (persistent) assert.equal(root.agentPresets.serviceFor(agent, 'terminals').list(agent).length, 0, 'diagnostic PTY is closed before the first user command');
+        console.log(`DIAGNOSTIC: ${mode}: ${facts.executable}; ${facts.system}; Bash ${facts.version}; cygpath=${facts.cygpath}`);
+      }
 
       // Exercise the actual tool path down to spawn, with a distinct executable
       // for each dialect. Persistent startup is intentionally stopped before PTY creation.
@@ -309,6 +340,13 @@ try {
         console.log(`PASS: ${mode} real registration, tool schema, prompt and explicit spawn path (live Pwsh skipped: no pwsh-path argument)`);
         continue;
       }
+      if (onWindows && dialect === 'bash') {
+        const file = join(workspace, `${mode}-参数 ' $.txt`);
+        writeFileSync(file, 'verified-中文');
+        const check = 'const a=process.argv.slice(1); if(require("node:fs").readFileSync(a[0],"utf8")!=="verified-中文" || a[1]!=="--remote-root=/workspace" || process.env.DSH_VERIFY_LITERAL!=="/workspace") process.exit(42); console.log("native-arguments-ok")';
+        const command = `MSYS2_ARG_CONV_EXCL='const ;--remote-root=' MSYS2_ENV_CONV_EXCL=DSH_VERIFY_LITERAL DSH_VERIFY_LITERAL=/workspace ${quoteBash(process.execPath)} -e ${quoteBash(check)} ${quoteBash(file)} '--remote-root=/workspace'`;
+        assert.match(succeeded(await harness.execute('bash', args(command))), /native-arguments-ok/);
+      }
       const firstCommand = dialect === 'bash'
         ? `cd -- ${quoteBash(moved)}; export SELECTOR_VERIFY_STATE=42; printf '%s\\n' selector-ok`
         : `Set-Location -LiteralPath ${quotePwsh(moved)}; $env:SELECTOR_VERIFY_STATE='42'; [Console]::WriteLine(('selector-' + 'ok'))`;
@@ -326,6 +364,11 @@ try {
       if (dialect === 'pwsh' && persistent) {
         assert.match(succeeded(await harness.execute(dialect, args("Write-Error 'selector-error'"))), /\[exit code: 1\]/);
         assert.doesNotMatch(succeeded(await harness.execute(dialect, args('$false'))), /exit code:? [1-9]/);
+      }
+      if (persistent && dialect === 'bash') {
+        assert.match(text(await harness.execute('bash', args('exit 9'))), /\[shell exited: code 9\]/);
+        assert.equal(root.agentPresets.serviceFor(agent, 'terminals').list(agent).length, 0);
+        assert.match(succeeded(await harness.execute('bash', args('printf "%s\\n" "${SELECTOR_VERIFY_STATE-unset}"'))), /unset/);
       }
       if (!persistent && dialect === 'bash') {
         const badCwd = join(scratch, 'missing-cwd');
@@ -399,24 +442,31 @@ try {
   const fallback = await environmentFacts({ disabledTools: OFFICIAL_FREE, shellMode: 'bash' });
   assert(fallback.section, 'officialBashFallback 下环境段必须仍然存在');
   assert.match(fallback.context, /Host platform: /);
-  assert.match(fallback.context, /supplied by the active preset or the host default; this plugin configured no shell/);
+  if (onWindows) {
+    assert.match(fallback.context, /Shell mode: bash/);
+    assert.match(fallback.context, /Verified Bash environment: MSYS/);
+    assert.notEqual(fallback.tools, bare.tools);
+  } else {
+    assert.match(fallback.context, /supplied by the active preset or the host default; this plugin configured no shell/);
+    assert.doesNotMatch(fallback.context, /Shell mode: bash/);
+    assert.doesNotMatch(fallback.context, /command deadline/);
+    assert.equal(fallback.tools, bare.tools, 'fallback 下不得改写工具表');
+  }
   assert(fallback.context.includes(workspace));
-  assert.doesNotMatch(fallback.context, /Shell mode: bash/, 'fallback 下不得冒充 bash 方言（Windows 上官方给的是 pwsh）');
-  assert.doesNotMatch(fallback.context, /command deadline/, 'fallback 下 timeoutMs 不生效，不得声明截止时间');
-  assert.equal(fallback.tools, bare.tools, 'fallback 下不得改写工具表');
   for (const [label, facts] of [['env only', envOnly], ['fallback', fallback]]) {
     assert.doesNotMatch(facts.context, /\{\{/, `${label}: 环境段引用的变量必须都已注册`);
   }
 
   const fallbackOff = await environmentFacts({ disabledTools: OFFICIAL_FREE, shellMode: 'bash', envContext: false });
   assert.equal(fallbackOff.section, undefined, 'envContext false 在 fallback 下同样不得贡献环境段');
-  assert.equal(fallbackOff.tools, bare.tools);
+  if (onWindows) assert.match(fallbackOff.tools, /Verified Bash environment: MSYS/);
+  else assert.equal(fallbackOff.tools, bare.tools);
 
   const managedPersistent = await environmentFacts({ disabledTools: OFFICIAL_FREE, shellMode: 'persistent-bash', timeoutMs: 12000 });
   assert.match(managedPersistent.context, /Shell mode: persistent-bash/, '托管持久化通道时必须声明方言');
   assert.match(managedPersistent.context, /command deadline is 12000 ms/, '托管持久化通道时必须声明本插件的截止时间');
   assert.match(managedPersistent.context, /may have changed its own directory/, '只有持久化通道才需要 cwd 分叉提醒');
-  assert.match(managedPersistent.context, /official default bash \(bashPath unset\)/, '未配置路径时必须说明走官方默认终端');
+  assert.match(managedPersistent.context, onWindows ? /from PATH/ : /official default bash \(bashPath unset\)/);
 
   const managedOneShot = await environmentFacts({ disabledTools: OFFICIAL_FREE, shellMode: 'bash', bashPath, timeoutMs: 12000 });
   assert.match(managedOneShot.context, /Shell mode: bash/);
@@ -550,9 +600,13 @@ try {
   try {
     assert.match(succeeded(await defaultOneShot.execute('bash', pathArgs('bash', RAW_PATH_COMMAND))), /C:\/Users\/chenwei\/docs/, 'official bash -c still receives the rewritten command');
   } finally { await defaultOneShot.dispose(); }
-  console.log('PASS: shell paths are optional — official /bin/bash terminal and official bash -c both work');
-  console.log('Not exercised: a full GUI/model session or Windows ConPTY on this host. Live PowerShell runs only when the optional pwsh-path argument is supplied.');
+  console.log(onWindows ? 'PASS: both Windows Bash modes resolve and execute the PATH entry' : 'PASS: shell paths are optional — official /bin/bash terminal and official bash -c both work');
+  console.log(onWindows ? 'PASS: Windows Bash environment and native argument acceptance; full GUI/model session not exercised.' : 'Not exercised: a full GUI/model session or Windows ConPTY on this host. Live PowerShell runs only when the optional pwsh-path argument is supplied.');
 } finally {
+  if (onWindows) {
+    if (previousPath === undefined) delete process.env[pathKey];
+    else process.env[pathKey] = previousPath;
+  }
   if (previousHome === undefined) delete process.env.DSH_HOME;
   else process.env.DSH_HOME = previousHome;
   rmSync(scratch, { recursive: true, force: true });

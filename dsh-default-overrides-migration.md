@@ -2,6 +2,14 @@
 
 当前使用方式、配置项和验证命令见 [README](README.md)。本页说明旧版插件的升级接线及回退，运行时决定见 [修复记录](.agents/notes/implemented/bug-fix/2026-09-24-shell-channel-runtime-contracts.md)。
 
+## 升级到 0.4.0
+
+Windows 上选用 `bash` 或 `persistent-bash` 时，现在优先使用显式 `bashPath`，否则固定宿主 PATH 中的首个 `bash.exe` 并验证。旧版一次性 Bash 无路径时保留官方 PowerShell 的行为已取消；持久化 Bash 也不再默认尝试 Windows 上的 `/bin/bash`。PATH 无兼容入口时，请配置 Git Bash/MSYS2 的绝对路径。
+
+当前接受经过实际进程或 PTY 验证的 MSYS 家族；Cygwin、Linux/WSL 或未知入口明确报不兼容，不自动换其他入口。两种 PowerShell 模式与非 Windows 默认行为保留。`normalizeWindowsPaths` 仍独立且默认关闭，升级不要求启用它。
+
+文件部署必须补齐新增的 [Bash 事实模块](scripts/bash-runtime.mjs) 与 [Windows PTY 适配器](scripts/windows-bash-terminal.mjs)，即使当前不是 Windows，主入口的静态依赖也必须完整。完整重启 DSH 并新建会话后，在 Windows 主机运行 `npm run verify:windows -- <DSH-installation> <bash-path> [pwsh-path]`。实现与验收边界见 [Windows Bash 决定](.agents/notes/implemented/feature/2026-09-25-verified-windows-bash.md)。
+
 ## 从 0.1.0 升级到 0.2.0
 
 0.1.0 无条件禁用 `tool-web` 与 `tool-workflow`；0.2.0 改为配置项，不配置就保持官方预设原样。要保留原行为，在 profile 补丁的 `config` 中补上：
@@ -26,13 +34,13 @@ bundle 会为全局 `system-prompt` 行添加 `dshDefaultOverridesReady` 等待�
 4. 如果旧 profile 的 `preset-standard.inject` 只有 `dshDefaultOverridesReady`，可以删除这条用户层补丁，交给 bundle；若还有其他依赖，则保留完整依赖列表。ready 必须保留在最终合成结果中。
 5. 完整重启 DSH，新建 `standard` 会话。稳定后再移除不再使用的旧插件副本。
 
-不要同时启用文件入口与 bundle。停用或卸载时以整个 bundle 为单位，并清理对应用户层配置及手工 ready 依赖；仅禁用主插件行会让标准预设等不到 ready。回退到文件部署时，先停用 bundle，再恢复备份的三个模块文件和用户补丁。
+不要同时启用文件入口与 bundle。停用或卸载时以整个 bundle 为单位，并清理对应用户层配置及手工 ready 依赖；仅禁用主插件行会让标准预设等不到 ready。回退到文件部署时，先停用 bundle，再恢复备份中同一版本的完整模块文件和用户补丁。
 
 ## 保留文件部署
 
-同时部署 [主插件](scripts/dsh-default-overrides.mjs)、[Git Bash 适配器](scripts/gitbash-executor.mjs) 和 [路径归一化模块](scripts/command-paths.mjs)，保持同目录。可以直接引用本仓库 `scripts/` 中的文件，也可以将三者复制到 DSH 的本地插件目录。适配器无条件导入归一化模块，即使关闭改写也必须交付第三个文件。
+同时部署 [主插件](scripts/dsh-default-overrides.mjs)、[Git Bash 适配器](scripts/gitbash-executor.mjs)、[路径归一化模块](scripts/command-paths.mjs)、[Bash 事实模块](scripts/bash-runtime.mjs) 和 [Windows PTY 适配器](scripts/windows-bash-terminal.mjs)，保持同目录。可以直接引用仓库的运行模块，也可以把五者复制到 DSH 的本地插件目录。关闭路径改写或在非 Windows 上运行，均不免除主入口和适配器的静态模块依赖。
 
-如果宿主配置此前直接引用仓库根目录的入口，将文件 URL 改为 `.../scripts/dsh-default-overrides.mjs`；复制到独立插件目录的部署仍只需保证三个模块文件同目录。
+如果宿主配置此前直接引用仓库根目录的入口，将文件 URL 改为 `.../scripts/dsh-default-overrides.mjs`；复制到独立插件目录的部署仍只需保证五个模块文件同目录。
 
 备份实际使用的插件文件和 profile 配置。若旧文件已合并其他定制，在原文件上合并差异，不用基础版本整份覆盖。运行中的 DSH 可能监视配置修改，因此完成修改后仍需完整重启；若模型正在被修改的 DSH 中工作，先保存修改与重启交接信息，再从独立终端重启。
 
@@ -53,7 +61,7 @@ bundle 会为全局 `system-prompt` 行添加 `dshDefaultOverridesReady` 等待�
 | `standardPersistentGitBashReady` | 发布方和 `preset-standard.inject` 一起改为 `dshDefaultOverridesReady` |
 | 公共 `shellPath` | Bash 家族改为 `bashPath`，Pwsh 家族改为 `pwshPath`，显式配置 `shellMode`；旧键会报告迁移错误 |
 | 两路径互斥 | 现在允许并存，仅使用和验证当前家族的路径 |
-| 只部署主插件或两个文件 | 补齐同目录的 [Git Bash 适配器](scripts/gitbash-executor.mjs) 和 [路径归一化模块](scripts/command-paths.mjs) |
+| 只部署旧的一至三个模块 | 按上文补齐全部五个运行模块，包括 [Bash 事实模块](scripts/bash-runtime.mjs) 与 [Windows PTY 适配器](scripts/windows-bash-terminal.mjs) |
 | `blockNestedShells: true` | 删除此配置；本版本明确拒绝旧启用项，`false` 可作为无操作的旧配置保留 |
 | 全局 PATH shim | 本版本不再创建或注入；完整重启旧 DSH，清除旧进程内存中的 PATH 前缀 |
 

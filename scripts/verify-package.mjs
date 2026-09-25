@@ -22,6 +22,7 @@ const home = join(scratch, 'home');
 const profileDir = join(home, 'profiles', 'web');
 const env = { ...process.env, DSH_HOME: home };
 const manifest = JSON.parse(readFileSync(join(repository, 'package.json'), 'utf8'));
+const runtimeFiles = ['dsh-default-overrides.mjs', 'gitbash-executor.mjs', 'command-paths.mjs', 'bash-runtime.mjs', 'windows-bash-terminal.mjs'];
 const runNode = (args, options = {}) => execFileSync(process.execPath, args, {
   cwd: repository, env, stdio: 'inherit', ...options,
 });
@@ -32,7 +33,7 @@ try {
     process.env.npm_execpath, 'pack', '--json', '--ignore-scripts', '--pack-destination', scratch,
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] })));
   const files = new Set(archive.files.map(file => file.path));
-  for (const file of ['package.json', 'cordis.patch.yml', 'scripts/dsh-default-overrides.mjs', 'scripts/gitbash-executor.mjs', 'scripts/command-paths.mjs']) {
+  for (const file of ['package.json', 'cordis.patch.yml', ...runtimeFiles.map(file => `scripts/${file}`)]) {
     assert(files.has(file), `archive is missing ${file}`);
   }
   assert(!archive.files.some(file => /^(?:node_modules|\.idea|\.git)\//.test(file.path)), 'no local dependencies or editor state in archive');
@@ -102,7 +103,7 @@ try {
 
   const fileDir = join(scratch, 'file-plugin');
   mkdirSync(fileDir);
-  for (const file of ['dsh-default-overrides.mjs', 'gitbash-executor.mjs', 'command-paths.mjs']) {
+  for (const file of runtimeFiles) {
     copyFileSync(fileURLToPath(new URL(`./scripts/${file}`, pathToFileURL(installedManifest))), join(fileDir, file));
   }
   const [{ entryListSchema }, yaml] = await Promise.all([
@@ -133,8 +134,9 @@ try {
     assert(!assembly.sections.some(section => section.name === 'harness:identity'));
     const adapter = fileStandard.plugins.find(row => row.id === 'local-standard-persistent-shell').config[0];
     assert.equal((await fileRoot.loader.import(adapter.name)).name, 'gitbash-executor');
+    assert.equal((await fileRoot.loader.import(new URL('./windows-bash-terminal.mjs', fileEntry.name).href)).name, 'windows-bash-terminal');
   } finally { await fileRoot.fiber.dispose(); }
-  console.log('PASS: documented three-file deployment imports its adapter and gates persona/identity configuration');
+  console.log('PASS: documented five-file deployment imports both adapters and gates persona/identity configuration');
 
   // Run existing process tests from the installed artifact, including relative adapter lookup.
   runNode([

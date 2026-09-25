@@ -2,6 +2,8 @@
 
 Status: implemented
 
+Windows Bash 的官方回退部分由 [Windows Bash 入口验证](2026-09-25-verified-windows-bash.md)取代：现在按配置或 PATH 固定入口，在执行上下文验证。路径可选、不猜安装目录及避免缺少 Bash 阻断全局 ready 的理由继续成立；非 Windows 与 PowerShell 保持本记录的默认规则。
+
 ## Problem
 
 `bashPath` 此前是 Bash 两模式的必填项；缺失时 `apply` 直接抛错。真实 profile 只写 `shellMode: persistent-bash`（未写 `bashPath`）时，DSH 启动失败：

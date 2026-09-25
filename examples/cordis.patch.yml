@@ -4,7 +4,7 @@
 - id: local-dsh-default-overrides
   config:
     shellMode: persistent-bash
-    # Optional: omit to use the official default (/bin/bash); point at Git Bash on Windows.
+    # Optional: Windows resolves the first bash.exe on the host PATH; other hosts retain /bin/bash.
     bashPath: 'C:/Program Files/Git/bin/bash.exe'
     # Optional: omit to let the official PowerShell executor auto-detect.
     pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'
@@ -23,8 +23,8 @@
       prefix: 'You are a helpful software engineer assistant.'
     # Hide the global harness:identity section for the whole profile.
     includeHarnessIdentity: false
-    # Rewrite simple Windows path arguments in Bash; ignored in other modes.
-    normalizeWindowsPaths: true
+    # Optional compatibility rewrite; environment detection does not require it.
+    normalizeWindowsPaths: false
 
 # The bundle supplies preset-standard.inject. If another patch overrides inject,
 # retain dshDefaultOverridesReady alongside that patch's other dependencies.

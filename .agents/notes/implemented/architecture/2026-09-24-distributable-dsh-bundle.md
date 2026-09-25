@@ -16,7 +16,7 @@ DSH 的实际 bundle 契约与 CLI 安装行为依据本机 `dsh-app-boot`、`ds
 
 [bundle 补丁](../../../../cordis.patch.yml)的默认 `config` 为空：不配置时插件不修改官方预设，Shell 通道和工具禁用清单都由使用者在 profile 层显式开启，禁用清单见[可配置禁用清单决定](../feature/2026-09-24-configurable-disabled-tools.md)。机器路径只放在用户 profile 补丁。bundle 必须位于提供 `preset-standard` 的层之后，文档和验证都使用官方 `web` profile；仅有 base 的新自定义 profile 不满足这一前提。
 
-用户配置通过[覆盖示例](../../../../examples/cordis.patch.yml)修改现有行。停用以整个 bundle 为单位，让主插件与 ready 等待同时退出；后续用户层若覆盖 `preset-standard.inject`，必须自行保留完整依赖列表。文件部署仍由[独立示例](../../../../examples/file.cordis.patch.yml)支持，三个模块及全部 ready 接线见[配置适用范围与命令安全](../feature/2026-09-25-option-applicability-and-command-safety.md)，迁移后只保留一个活动入口。
+用户配置通过[覆盖示例](../../../../examples/cordis.patch.yml)修改现有行。停用以整个 bundle 为单位，让主插件与 ready 等待同时退出；后续用户层若覆盖 `preset-standard.inject`，必须自行保留完整依赖列表。文件部署仍由[独立示例](../../../../examples/file.cordis.patch.yml)支持，全部 ready 接线见[配置适用范围与命令安全](../feature/2026-09-25-option-applicability-and-command-safety.md)，五模块依赖闭包见 [Windows Bash 入口验证](../feature/2026-09-25-verified-windows-bash.md)，迁移后只保留一个活动入口。
 
 ## Alternatives considered
 

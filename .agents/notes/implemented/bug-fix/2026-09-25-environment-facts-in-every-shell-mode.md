@@ -2,6 +2,8 @@
 
 Status: implemented
 
+[Windows Bash 入口验证](../feature/2026-09-25-verified-windows-bash.md)将 Windows Bash 的通道细节改为真实执行器提供的事实，并取消 Windows 的官方 PowerShell 回退。本记录的通道所有权、跨预设平台/工作区事实和 envContext 独立开关继续成立。
+
 ## Problem
 
 `envContext`（默认 `true`，README 承诺"向模型添加模式、配置路径和会话工作区"）在两种长期可用的配置下**静默失效**：`shellMode: bash` 省略 `bashPath`（`officialBashFallback`），以及完全不配置 `shellMode`。原因是唯一那条提示词钩子挂在 `if (shellEnabled && !officialBashFallback)` 上——这个条件本来是给 Shell 行补丁用的，却连带停掉了环境段、`dsh_overrides_*` 变量和工具说明补充。

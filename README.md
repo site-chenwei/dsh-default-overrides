@@ -7,7 +7,8 @@
 ## 功能范围
 
 - 四种 Shell 模式，每次只向模型暴露所选方言的一个 Shell 工具。
-- `bashPath` 与 `pwshPath` 都可省略：显式路径会传给对应后端并在无效时报错，省略则用官方默认。
+- `bashPath` 与 `pwshPath` 都可省略：显式路径无效时直接报错。Windows Bash 从宿主 PATH 解析并验证入口，其他平台与 PowerShell 使用原有官方默认。
+- Windows Bash 指引来自真实进程或 PTY 的验证结果；当前接受 MSYS 家族（Git Bash / MSYS2），Cygwin、Linux/WSL 和无法识别的入口明确报不兼容。
 - 模型说明与工具参数一致，补充当前方言及禁止套用其他 Shell 的操作规则。
 - 通过 `disabledTools` 按行 ID 禁用 `standard` 中的任意插件行。
 - 通过 `persona` 固定或替换 persona 文本，其余标准指引与运行时上下文照常组装；`personaPresets` 决定这份人设作用于哪些预设（默认只有 `standard`）。
@@ -67,16 +68,32 @@ dsh plugin --profile web add dsh-default-overrides
     persona:
       prefix: 'You are a helpful software engineer assistant.'
     includeHarnessIdentity: false
-    normalizeWindowsPaths: true
+    normalizeWindowsPaths: false
 ```
 
 Windows 可将 `bashPath` 设置为 `'C:/Program Files/Git/bin/bash.exe'`，并同时保留 `pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'`。切换时只修改 `shellMode`。DSH 对匹配行的 `config` 做整体替换，因此要保留仍需使用的配置字段。
 
-**两条路径都可省略。** 只写 `shellMode: persistent-bash` 时会用官方默认终端（`/bin/bash`）启动持久化会话；`persistent-pwsh` 省略 `pwshPath` 时由官方探测 PowerShell。一次性模式省略 `bashPath` 且未开启 `normalizeWindowsPaths` 时，插件完全不改官方 Shell 行，等于官方默认行为（Windows 上官方默认给出的是 pwsh）；省略 `bashPath` 但需要路径改写时，改写走官方默认的 `bash -c`。
+**两条路径都可省略。** Windows 上的 `bash` 与 `persistent-bash` 都优先使用显式 `bashPath`，否则按宿主进程 PATH 顺序选择首个 `bash.exe`，固定绝对入口后验证。找不到或不兼容会明确报错，不会静默使用 PowerShell 或继续选择其他 Bash。
+
+非 Windows 保持原行为：`persistent-bash` 省略路径时使用官方 `/bin/bash`；一次性 `bash` 无路径且未开启改写时保持官方行，有改写时使用官方 `bash -c`。两种 PowerShell 模式省略路径时仍委托官方探测。
+
+### Windows Bash 环境验证
+
+`0.4.0` 改变了 Windows 的默认 Bash 语义：选了 Bash 就需要兼容的 Bash，旧版保留官方 PowerShell 的回退不再适用。PATH 中没有 Git Bash/MSYS2 时，请明确设置 `bashPath`。不会扫描常见安装目录；相对 PATH 项按宿主工作目录解析后固定，插件不修改宿主 PATH。
+
+执行上下文启动后，以真实启动参数运行固定探测：检查 Bash 版本、`uname`、`cygpath`，并验证宿主 Node 路径的 Unix/Windows 往返转换。当前接受 MSYS 家族，无法仅凭运行信息区分 Git Bash 与独立 MSYS2 时统一标为 MSYS。Cygwin、Linux/WSL 或其他类型会报告模式、入口、识别结果及支持边界，不把“能检测到”视作完整支持。
+
+一次性模式使用固定入口与 `-lc`；持久化模式保留官方交互参数，开启路径改写时仍使用 rcfile 垫片。探测跟随各自实际初始化，不统一更改用户的启动文件策略。探测上限为 30 秒，并接受当前请求取消；成功事实在当前执行上下文复用，配置重载后重新检测。异步探测不进入同步的预设配置钩子，也不成为全局 ready 的等待条件。
+
+持久化工具惰性建立正式终端，因此首次工具说明装配会用同一后端建立短暂 PTY，探测后关闭；正式 PTY 启动时再次检查兼容性。目录、变量等后续状态仍由官方工具保留，探测结果不是持久化会话的实时状态快照。
+
+工具说明、参数说明与可关闭的环境段共享验证事实。MSYS 指引说明：优先相对文件路径、正确引用；原生 Windows 程序可能收到转换后的参数和环境变量；容器/远端路径按其实际用途处理；必要时将 `MSYS2_ARG_CONV_EXCL`、`MSYS2_ENV_CONV_EXCL` 限定到具体调用。环境识别不会自动开启路径改写。依据见 [MSYS2 路径说明](https://www.msys2.org/docs/filesystem-paths/) 与 [Bash 单引号规则](https://www.gnu.org/software/bash/manual/html_node/Single-Quotes.html)。
+
+### 配置作用域
 
 Shell 补丁、行补丁与提示词平面三者互不牵连：**行补丁只作用于官方 `standard` 预设**（它是本插件声明兼容的结构基线），而**提示词平面不按预设名过滤**——环境事实段对 profile 内每个预设的 agent 都贡献，只是**只有被行补丁配置过的预设**才声明 Shell 通道并补充工具说明。这样：
 
-- 未接管通道时（含一次性 bash 无路径回退到官方行）只声明平台、会话工作区，以及"通道由当前预设或宿主默认提供、本插件未配置"，不会在 Windows 回退到官方 pwsh 时被误标成 bash，也不会声称本插件的 `timeoutMs` 生效。
+- 未接管通道时（含非 Windows 一次性 bash 无路径回退到官方行）只声明平台、会话工作区，以及“通道由当前预设或宿主默认提供、本插件未配置”，也不声称本插件的 `timeoutMs` 生效。
 - `minimal`、`ptc` 或自定义预设的会话照样拿到平台与工作区事实，但不会被塞进本插件配置的方言说明（那些预设的 Shell 由它们自己的行决定）。
 
 | 字段 | 默认值 | 说明 |
@@ -87,7 +104,7 @@ Shell 补丁、行补丁与提示词平面三者互不牵连：**行补丁只作
 | `personaPresets` | `['standard']` | 严格选择接受 `persona` 覆盖的预设，`standard` 也必须在名单中；`[]` 停用全部覆盖。未配置 `persona` 时可预先填写名单，不报错。Shell 与 `disabledTools` 仍只作用于 `standard` |
 | `includeHarnessIdentity` | 未设置 | 是否保留 `harness:identity` 段（`You are an AI agent powered by DeepSeek Harness.`）。不设置时不修改；`false` 隐藏该句 |
 | `normalizeWindowsPaths` | `false` | 仅 Bash 两模式：进入 bash 前纠正简单参数中的 `C:\a\b`。其他模式或未配置 Shell 时忽略该值，不报错 |
-| `bashPath` | 未设置 | 可选。显式指定 Bash 可执行文件（Windows 上通常要指向 Git Bash）；省略时持久化模式用官方默认 `/bin/bash`，一次性模式在无需改写时保持官方行不动 |
+| `bashPath` | 未设置 | 可选的 Bash 绝对路径。Windows 省略时选择宿主 PATH 的首个 bash.exe 并验证；其他平台保留原有官方默认规则 |
 | `pwshPath` | 未设置 | 可选。建议显式填写以固定版本；省略时委托官方 PowerShell 探测 |
 | `timeoutMs` | `300000` | 正整数。持久化模式为命令截止时间；一次性模式沿用官方等待、后台处理与上限 |
 | `envContext` | 未设置（选了 `shellMode` 时按 `true`） | 是否向模型添加环境事实段：平台与工作区对每个预设都给出，Shell 通道细节（模式、可执行文件、参数语义、截止时间）只在行补丁确实配置过该预设时给出。显式写 `true` 时即使未配置 Shell 也会贡献平台与工作区；显式写 `false` 不贡献该段但仍保留工具操作规则；什么都不配置时本插件零影响 |
@@ -115,7 +132,7 @@ Shell 补丁、行补丁与提示词平面三者互不牵连：**行补丁只作
 
 该选项要生效，全局 `system-prompt` 行必须在插件就绪后再解析配置，因此 [bundle 补丁](cordis.patch.yml)为该行添加了 `dshDefaultOverridesReady` 等待。用户层若覆盖了该行的 `inject`，同样要保留这个信号。不使用该选项时这条等待仍然存在，代价只是启动顺序上的一次等待。
 
-`normalizeWindowsPaths` 解决 Windows 上 Bash 把反斜杠当转义符吃掉的问题：`cd C:\Users\me` 在 bash 里会变成 `cd C:Usersme` 而失败。开启后，`C:\a\b` 会在命令进入 bash **之前**被改写成 `C:/a/b`，一次性与持久化两种 Bash 模式都生效：
+`normalizeWindowsPaths` 是默认关闭的兼容辅助。例如未引用的 `cd C:\Users\me` 在 Bash 中会变成 `cd C:Usersme`；但单引号可以保留反斜杠，应用程序也可能把它们解释为格式转义。开启后，简单参数形式的 `C:\a\b` 会在进入 Bash **之前**改成 `C:/a/b`，一次性与持久化两种 Bash 模式都生效：
 
 - 只改写整个简单参数为盘符路径的情况，支持未引用或整体单/双引号引用的路径（含空格）；混合引用、sed 表达式与内嵌程序中的盘符片段保持原文。
 - 遇到展开、转义引号、heredoc、复合语法或未闭合引号时，整条命令原文透传，不会先改前半段再退出。复杂命令请显式使用正确的正斜杠路径。
@@ -123,7 +140,7 @@ Shell 补丁、行补丁与提示词平面三者互不牵连：**行补丁只作
 - 持久化模式通过给 `dsh-terminal-bash` 传官方 `shellArgs`、用 `--rcfile` 加载一个垫片实现（写在系统临时目录 `dsh-default-overrides-bashrc.sh`，每次启动重新生成）。垫片只在命令里出现 `X:\` 时才启动 node 做改写，其他命令原样透传。
 - 该改写依赖宿主持久化工具仍以 `eval --` 包装命令；宿主改版后垫片可能静默失效——命令照常执行，只是不再改写。
 
-工具说明与 `command` 参数说明里也写明了“不要使用反斜杠、含空格的路径要加引号”，与上面的确定性改写互为补充。
+工具说明与 `command` 参数说明采用 Bash 引用规则，提醒不要把代码、正则、格式串和数据自动当作文件路径。环境识别不能推断任意应用参数的含义，路径改写也不承诺语义等价。
 
 只验证和使用当前模式对应的路径。一次性工具的前台等待超时可能将命令转为后台任务，并不等于杀死进程。配置后使用新会话验收，旧会话可能保留旧预设和 Shell 状态。
 
@@ -136,7 +153,7 @@ bundle 已为 `preset-standard` 添加 `dshDefaultOverridesReady`。如果用户
 - 更新时对同一 profile 执行 `add` 并指定新版本，然后完整重启 DSH。
 - 在插件管理器中以**整个 bundle**为单位停用；仅禁用主插件行会让 `standard` 等不到 ready。卸载可执行 `dsh plugin --profile web remove dsh-default-overrides`。
 - 停用或卸载时，删除用户层针对 `local-dsh-default-overrides` 的配置；若旧部署手工添加过 ready 依赖，也要仅移除该依赖并保留其他依赖。
-- 仍支持直接文件部署，使用 [examples/file.cordis.patch.yml](examples/file.cordis.patch.yml)，同时部署[主插件](scripts/dsh-default-overrides.mjs)、同目录[适配器](scripts/gitbash-executor.mjs)和[路径模块](scripts/command-paths.mjs)。文件入口与 bundle 二选一。
+- 仍支持直接文件部署，使用 [examples/file.cordis.patch.yml](examples/file.cordis.patch.yml)，五个运行模块必须同目录部署：[主插件](scripts/dsh-default-overrides.mjs)、[一次性适配器](scripts/gitbash-executor.mjs)、[路径模块](scripts/command-paths.mjs)、[Bash 事实模块](scripts/bash-runtime.mjs)、[Windows PTY 适配器](scripts/windows-bash-terminal.mjs)。文件入口与 bundle 二选一。
 
 ## 验证
 
@@ -166,6 +183,10 @@ npm run verify:package -- `
 ```
 
 运行验证覆盖四模式注册与路径传递、工具参数与提示、persona 与 `harness:identity` 的真实提示词组装、`personaPresets` 的跨预设生效与未列出预设的默认保留、环境事实段在每种 `shellMode` × `envContext` 组合下的文本与工具表、预设范围、ready 重载、Bash 真进程、持久化 PTY、状态/退出码、后台失败与取消。未提供 PowerShell 路径时只检查 Pwsh 注册与启动参数，并明确跳过实跑。
+
+Windows 专项验收使用 `npm run verify:windows -- <DSH-installation> <bash-path> [pwsh-path]`，在非 Windows 主机上会直接拒绝，避免把本机结果误报成 Windows 通过。验证进程会临时把给定 Bash 所在目录放在自己的 PATH 前面，用于检查默认入口；不会修改系统或正在运行的 DSH 的 PATH。请分别提供 Git Bash 和独立 MSYS2 的实际路径运行。
+
+除现有回归外，Windows 检查实际环境与指引一致、探测 PTY 已关闭、包含空格/中文/单引号的路径，以及原生 Node 收到的文件参数、远端路径参数和环境变量是否符合局部 MSYS 转换排除规则。本机的[运行时验证](scripts/verify-bash-runtime.mjs)覆盖入口选择、类型和往返转换判定、取消隔离，并用真实进程及 PTY 检查不支持的 Bash 被拒绝且清理完成。
 
 ### 已验证边界
 

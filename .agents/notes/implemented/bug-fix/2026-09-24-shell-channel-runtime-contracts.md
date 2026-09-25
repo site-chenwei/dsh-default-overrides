@@ -2,6 +2,8 @@
 
 Status: implemented
 
+[Windows Bash 入口验证](../feature/2026-09-25-verified-windows-bash.md)扩展了 Windows 入口、探测和指引；继续复用本记录中的官方 executeArgv、后台与取消契约，以及 PTY 清理语义。
+
 ## Problem
 
 四模式配置测试通过，但真实链路存在缺陷：入口不发布 dshDefaultOverridesReady；一次性 Bash 未声明 subprocess 注入；自研句柄把启动失败转成 completed/null，后台显示 exit code 0；全局 PATH shim 被 PowerShell 探测误选；applyEntryPatches 缺 warn 回调导致 minimal 报错；一次性工具忽略 description 配置，环境段又错误声称仅接收 command。路径互斥妨碍只改 shellMode 切换，执行器未纳入提交。

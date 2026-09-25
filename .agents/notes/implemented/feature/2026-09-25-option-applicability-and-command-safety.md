@@ -2,6 +2,8 @@
 
 Status: implemented
 
+[Windows Bash 入口验证](2026-09-25-verified-windows-bash.md)沿用本记录的选项适用范围、persona 精确名单与保守改写；只把 Windows Bash 入口校验放到其执行上下文，并将部署模块扩为五个。
+
 ## Problem
 
 切换 PowerShell 时保留 `normalizeWindowsPaths: true` 会阻止插件加载；只预填 `personaPresets` 也会报错。`standard` 绕过名单判断，导致只选 ptc 仍修改 standard。路径改写把双引号内的转义引号改坏，已通过一次性 Bash 和真实 PTY 复现原字符串内容成为额外命令；含盘符的 sed 表达式同样被改坏。文件部署说明遗漏 command-paths 模块与全局 system-prompt 的 ready 接线。

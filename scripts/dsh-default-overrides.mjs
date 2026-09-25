@@ -2,6 +2,7 @@ import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BASH_RUNTIME_SERVICE, bashRuntimeDescription, bashPathGuidance } from './bash-runtime.mjs';
 
 // Note: 包根导出与 bundle 共用此入口，安装接线由补丁提供 — 见 .agents/notes/implemented/architecture/2026-09-24-distributable-dsh-bundle.md。
 export const name = 'dsh-default-overrides';
@@ -54,11 +55,11 @@ function writeBashShim() {
 }
 
 /** 在 command 参数说明上补一句路径写法，紧挨模型实际填写的位置。 */
-function commandParameterHint(parameters, dialect) {
+function commandParameterHint(parameters, dialect, facts) {
   const command = parameters?.properties?.command;
   if (typeof command?.description !== 'string') return parameters;
   const hint = dialect === 'bash'
-    ? ' Paths must use forward slashes; never use backslashes (Bash drops them as escapes). Quote paths containing spaces.'
+    ? ` ${bashPathGuidance(facts)}`
     : ' Quote paths containing spaces.';
   return { ...parameters, properties: { ...parameters.properties, command: { ...command, description: `${command.description}${hint}` } } };
 }
@@ -89,12 +90,12 @@ function verifyPersonaOption(persona) {
 }
 
 /** 操作规则补充官方说明；不声称 PATH 遮蔽或系统级 Shell 隔离。 */
-function shellGuidance(dialect) {
+function shellGuidance(dialect, facts) {
   return dialect === 'bash'
     ? [
-      'Use Bash syntax with the configured Bash executable (Git Bash / MSYS2 on Windows).',
+      facts ? bashRuntimeDescription(facts) : 'Use Bash syntax with the configured Bash executable.',
       'This is the selected shell channel. Do not invoke cmd, powershell or pwsh (including .exe or absolute paths) to wrap a command or retry a failure. Run native programs directly; if a different shell is required, explain the need to the user.',
-      "Never write a Windows path with backslashes: Bash treats \\ as an escape and silently drops it, so cd C:\\Users\\me becomes cd C:Usersme and fails. Convert every path to forward slashes and quote paths that contain spaces, e.g. cd -- 'C:/Users/My Name/project'.",
+      bashPathGuidance(facts),
     ].join(' ')
     : [
       'Use PowerShell syntax with the configured PowerShell executable.',
@@ -178,9 +179,10 @@ export async function apply(ctx, options = {}) {
   const persistent = shellEnabled && mode.startsWith('persistent-');
   const dialect = mode === 'bash' || mode === 'persistent-bash' ? 'bash' : 'pwsh';
   const pathKey = dialect === 'bash' ? 'bashPath' : 'pwshPath';
-  // 两路径可以并存且都可选；未配置时交给官方默认（bash 用 /bin/bash，pwsh 用官方探测），仅当前家族的字段影响加载。
+  // 两路径可并存；Windows Bash 的入口验证在执行器中完成，其他分支只校验当前家族。
   const shellPath = shellEnabled ? options[pathKey] : undefined;
-  if (shellPath !== undefined && (typeof shellPath !== 'string' || !isAbsolute(shellPath) || !existsSync(shellPath) || !statSync(shellPath).isFile())) {
+  const windowsBash = shellEnabled && dialect === 'bash' && process.platform === 'win32';
+  if (!windowsBash && shellPath !== undefined && (typeof shellPath !== 'string' || !isAbsolute(shellPath) || !existsSync(shellPath) || !statSync(shellPath).isFile())) {
     throw new Error(`dsh-default-overrides: ${pathKey} must name an existing absolute executable`);
   }
   // Note: 先确定适用范围，再校验有效值；无关配置可预先保留 — 见 .agents/notes/implemented/feature/2026-09-25-option-applicability-and-command-safety.md。
@@ -192,8 +194,8 @@ export async function apply(ctx, options = {}) {
   if (envContext !== undefined && typeof envContext !== 'boolean') {
     throw new Error('dsh-default-overrides: envContext must be a boolean');
   }
-  // 一次性 bash 既没配置路径也不需要改写时不挂任何补丁 — 见 .agents/notes/implemented/feature/2026-09-24-optional-shell-paths.md。
-  const officialBashFallback = shellEnabled && !persistent && dialect === 'bash' && shellPath === undefined && !normalizeWindowsPaths;
+  // Windows 的 Bash 两模式必须解析并验证真实 Bash，其他平台沿用官方回退。
+  const officialBashFallback = shellEnabled && !persistent && dialect === 'bash' && !windowsBash && shellPath === undefined && !normalizeWindowsPaths;
   // managedShell：插件是否真的接管了这个方言通道（决定工具说明补充与 Shell 通道声明）。
   const managedShell = shellEnabled && !officialBashFallback;
   const timeoutMs = managedShell ? options.timeoutMs ?? 300000 : undefined;
@@ -220,7 +222,7 @@ export async function apply(ctx, options = {}) {
       { id: 'pty', name: '@deepseek-ai/dsh-terminal' },
       {
         id: 'terminal-shell',
-        name: '@deepseek-ai/dsh-terminal-bash',
+        name: windowsBash ? new URL('./windows-bash-terminal.mjs', import.meta.url).href : '@deepseek-ai/dsh-terminal-bash',
         config: {
           shellDialect: dialect,
           ...(shellPath === undefined ? {} : { shellPath }),
@@ -243,7 +245,7 @@ export async function apply(ctx, options = {}) {
         id: SHELL_GROUP_ID,
         name: 'cordis:group',
         group: true,
-        isolate: persistent ? { terminals: true } : { shell: true },
+        isolate: { ...(persistent ? { terminals: true } : { shell: true }), ...(windowsBash ? { [BASH_RUNTIME_SERVICE]: true } : {}) },
         config: [
           ...backendRows,
           {
@@ -327,16 +329,24 @@ export async function apply(ctx, options = {}) {
       // 不按预设名放行也不按预设名拦截：环境事实对每个 agent 都贡献，只有本插件确实给该预设打过行补丁时才声明 Shell 通道并改写工具说明。
       const ownsChannel = managedShell && configuredShellPresets.has(ctx.agentPresets.composedPreset(agent.ctx));
       const workspace = agent.session.header.cwd;
+      // Note: 探测在执行上下文发生；工具说明和环境段不能各自猜测身份 — 见 .agents/notes/implemented/feature/2026-09-25-verified-windows-bash.md。
+      let facts;
+      if (ownsChannel && windowsBash) {
+        const runtime = ctx.agentPresets.serviceFor(agent, BASH_RUNTIME_SERVICE);
+        if (!runtime) throw new Error('dsh-default-overrides: verified Bash service is unavailable in this preset revision; restart DSH and create a new session after upgrading');
+        facts = await runtime.inspect(agent, context.signal);
+      }
       const tools = ownsChannel
         ? assembly.tools.map(tool => tool.name === dialect
-          ? { ...tool, description: `${tool.description}\n\n${shellGuidance(dialect)}`, parameters: commandParameterHint(tool.parameters, dialect) }
+          ? { ...tool, description: `${tool.description}\n\n${shellGuidance(dialect, facts)}`, parameters: commandParameterHint(tool.parameters, dialect, facts) }
           : tool)
         : assembly.tools;
       if (!environmentEnabled) return { ...assembly, tools };
       const variables = { ...assembly.variables };
       if (workspace !== undefined) variables.dsh_overrides_workspace = workspace;
       // 只有本段真的引用 Shell 路径时才注册该变量，避免未接管通道时留下无载体的变量。
-      if (ownsChannel) variables.dsh_overrides_shell_path = shellPath ?? (dialect === 'bash' ? 'the official default bash (bashPath unset)' : 'auto-detected by the official PowerShell executor (pwshPath unset)');
+      if (ownsChannel) variables.dsh_overrides_shell_path = facts?.executable ?? shellPath ?? (dialect === 'bash' ? 'the official default bash (bashPath unset)' : 'auto-detected by the official PowerShell executor (pwshPath unset)');
+      if (facts) variables.dsh_overrides_bash_runtime = bashRuntimeDescription(facts);
       return {
         ...assembly,
         tools,
@@ -345,7 +355,7 @@ export async function apply(ctx, options = {}) {
           ...assembly.contexts.filter(section => section.name !== ENVIRONMENT_SECTION),
           {
             name: ENVIRONMENT_SECTION,
-            text: environmentContext({ managed: ownsChannel, mode, persistent, timeoutMs, hasWorkspace: workspace !== undefined }),
+            text: environmentContext({ managed: ownsChannel, mode, persistent, timeoutMs, hasWorkspace: workspace !== undefined }) + (facts ? '\n{{dsh_overrides_bash_runtime}}' : ''),
           },
         ],
       };
