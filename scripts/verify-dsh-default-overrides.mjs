@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { normalizeWindowsPaths } from './command-paths.mjs';
 
 // Usage: node scripts/verify-dsh-default-overrides.mjs <dsh-install-dir> <bash-path> [pwsh-path]
 // An omitted pwsh-path verifies wiring with a distinct executable, never claims live Pwsh acceptance.
@@ -154,9 +155,17 @@ try {
     [{ includeHarnessIdentity: 'no' }, /includeHarnessIdentity must be a boolean/],
     [{ envContext: 'yes' }, /envContext must be a boolean/],
     [{ shellMode: 'bash', bashPath, normalizeWindowsPaths: 'yes' }, /normalizeWindowsPaths must be a boolean/],
-    [{ shellMode: 'pwsh', normalizeWindowsPaths: true }, /only applies to shellMode bash or persistent-bash/],
-    [{ normalizeWindowsPaths: true }, /only applies to shellMode bash or persistent-bash/],
   ]) await assert.rejects(() => registeredPreset(config), pattern);
+
+  assert.deepEqual(await registeredPreset({ normalizeWindowsPaths: 'unused', bashPath: 'unused', pwshPath: 'unused', timeoutMs: -1 }), standard.config);
+  assert.deepEqual(await registeredPreset({ shellMode: 'bash', timeoutMs: -1 }), standard.config, '官方回退不使用本插件的 timeoutMs');
+  for (const shellMode of ['pwsh', 'persistent-pwsh']) {
+    const baseline = await registeredPreset({ shellMode, pwshPath });
+    for (const normalizeWindowsPaths of [true, 'unused']) {
+      assert.deepEqual(await registeredPreset({ shellMode, pwshPath, bashPath: 'unused', normalizeWindowsPaths }), baseline);
+    }
+  }
+  console.log('PASS: inactive shell options are ignored while active paths and values remain validated');
 
   assert.equal(existsSync(SHIM), false, 'the bash shim must not be written unless the option is enabled');
   const oneShot = await registeredPreset({ shellMode: 'bash', bashPath, normalizeWindowsPaths: true });
@@ -254,7 +263,7 @@ try {
   console.log('PASS: actual preset registration, ready reload, all four path mappings, minimal/custom isolation, missing targets and no host mutation');
 
   for (const mode of ['bash', 'pwsh', 'persistent-bash', 'persistent-pwsh']) {
-    const harness = await runtime({ shellMode: mode, bashPath, pwshPath, timeoutMs: 10000, disabledTools: ['tool-web'], persona: { prefix: PERSONA, suffix: 'Verify persona suffix.' } });
+    const harness = await runtime({ shellMode: mode, bashPath, pwshPath, normalizeWindowsPaths: mode.includes('pwsh'), timeoutMs: 10000, disabledTools: ['tool-web'], persona: { prefix: PERSONA, suffix: 'Verify persona suffix.' } });
     const { root, agent } = harness;
     const persistent = mode.startsWith('persistent-');
     const dialect = mode.includes('bash') ? 'bash' : 'pwsh';
@@ -459,12 +468,22 @@ try {
     assert(texts.includes(INHERITED_PERSONA), '未列出的预设必须保留自己的 prefix');
     assert(!texts.includes(SHARED_PERSONA), '未列出的预设不得拿到这份人设');
   } finally { await unlisted.dispose(); }
-  for (const [config, pattern] of [
-    [{ persona: { prefix: PERSONA }, personaPresets: [] }, /personaPresets must be a non-empty array/],
-    [{ persona: { prefix: PERSONA }, personaPresets: ['standard', 7] }, /personaPresets must be a non-empty array/],
-    [{ personaPresets: ['other'] }, /personaPresets only widens the persona row patch/],
-  ]) await assert.rejects(() => registeredPreset(config), pattern);
-  console.log('PASS: personaPresets widens only the persona row — listed presets inherit the configured prefix, others keep their own');
+  for (const config of [
+    { persona: { prefix: SHARED_PERSONA }, personaPresets: ['ptc'] },
+    { persona: { prefix: SHARED_PERSONA }, personaPresets: [] },
+    { persona: { preifx: 'inactive' }, personaPresets: [] },
+    { personaPresets: ['ptc'] },
+  ]) assert.deepEqual(await registeredPreset(config), standard.config, '未被选中的 standard 必须逐字段保留');
+  const onlyPtc = { persona: { prefix: SHARED_PERSONA }, personaPresets: ['ptc'] };
+  const ptcRow = yaml.load(readFileSync(requireDsh.resolve('@deepseek-ai/dsh-web-app/presets/ptc.patch.yml'), 'utf8'), { schema: entryListSchema })[0].insert[0];
+  assert.equal(personaRow(await registeredPreset(onlyPtc, ptcRow)).config.prefix, SHARED_PERSONA);
+  const shellWithoutPersona = await registeredPreset({ ...onlyPtc, shellMode: 'bash', bashPath });
+  assert.deepEqual(personaRow(shellWithoutPersona), shippedPersona, 'persona 名单不影响 standard 的 Shell 补丁');
+  assert(flatten(shellWithoutPersona.plugins).some(row => row.id === GROUP_ID));
+  for (const personaPresets of ['ptc', ['standard', 7]]) {
+    await assert.rejects(() => registeredPreset({ persona: { prefix: PERSONA }, personaPresets }), /personaPresets must be an array/);
+  }
+  console.log('PASS: personaPresets is an exact allowlist, including standard; empty and preconfigured lists are harmless');
 
   // 行补丁在 internal/config 阶段生效：预设行没等到本插件就绪时，它的 config 已经解析完，补丁静默丢失。
   // 这不是夹具假想——真实 preset-ptc/preset-cordis 行原本就没有这条 inject，ptc 会话拿到的是官方前缀。
@@ -490,6 +509,19 @@ try {
   console.log('PASS: includeHarnessIdentity false drops only the harness identity section');
 
   const RAW_PATH_COMMAND = String.raw`printf '%s\n' C:\Users\chenwei\docs`;
+  const QUOTED_PATH_COMMAND = String.raw`printf '%s\n' 'C:\Program Files\Git' "D:\My Documents\file"`;
+  const ESCAPED_QUOTE_COMMAND = String.raw`printf '%s\n' "C:\Temp\foo\"; printf SHOULD_NOT_RUN; #"`;
+  const SED_COMMAND = String.raw`printf '%s\n' 'value=C:\tmp\x' | sed 's/C:\\tmp/X/'`;
+  for (const command of [
+    ESCAPED_QUOTE_COMMAND,
+    String.raw`printf '%s\n' C:\tmp $(printf value)`,
+    String.raw`printf '%s\n' "C:\tmp\$HOME"`,
+    "cat <<'EOF'\nC:\\tmp\\data\nEOF",
+    String.raw`printf '%s\n' C:\tmp "unfinished`,
+  ]) assert.equal(normalizeWindowsPaths(command), command, '复杂命令必须整体透传，不能提前应用部分改写');
+  assert.equal(normalizeWindowsPaths(String.raw`sed 's/C:\\tmp/X/'`), String.raw`sed 's/C:\\tmp/X/'`);
+  assert.equal(normalizeWindowsPaths(String.raw`printf '%s\n' prefix'C:\tmp' # C:\comment`), String.raw`printf '%s\n' prefix'C:\tmp' # C:\comment`);
+  assert.equal(normalizeWindowsPaths(QUOTED_PATH_COMMAND), String.raw`printf '%s\n' 'C:/Program Files/Git' "D:/My Documents/file"`);
   const pathArgs = (mode, command) => ({ command, ...(mode === 'persistent-bash' ? {} : { description: 'Verify Windows path handling' }) });
   for (const mode of ['bash', 'persistent-bash']) {
     const plain = await runtime({ shellMode: mode, bashPath, pwshPath, disabledTools: ['tool-web'], timeoutMs: 10000 });
@@ -499,6 +531,11 @@ try {
     const rewriting = await runtime({ shellMode: mode, bashPath, pwshPath, disabledTools: ['tool-web'], timeoutMs: 10000, normalizeWindowsPaths: true });
     try {
       assert.match(succeeded(await rewriting.execute('bash', pathArgs(mode, RAW_PATH_COMMAND))), /C:\/Users\/chenwei\/docs/, `${mode}: the option rewrites the path before bash parses it`);
+      assert.match(succeeded(await rewriting.execute('bash', pathArgs(mode, QUOTED_PATH_COMMAND))), /C:\/Program Files\/Git\nD:\/My Documents\/file/);
+      const escaped = succeeded(await rewriting.execute('bash', pathArgs(mode, ESCAPED_QUOTE_COMMAND)));
+      assert(escaped.includes(String.raw`C:\Temp\foo"; printf SHOULD_NOT_RUN; #`));
+      assert(!escaped.includes('\nSHOULD_NOT_RUN'), `${mode}: a literal argument must not become an extra command`);
+      assert.match(succeeded(await rewriting.execute('bash', pathArgs(mode, SED_COMMAND))), /value=X\\x/);
     } finally { await rewriting.dispose(); }
   }
   console.log('PASS: normalizeWindowsPaths rewrites Windows paths in one-shot bash and in the persistent PTY');

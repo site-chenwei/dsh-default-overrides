@@ -84,13 +84,15 @@ Shell 补丁、行补丁与提示词平面三者互不牵连：**行补丁只作
 | `shellMode` | 未设置 | 四种取值见上表；不设置时保留官方 Shell 选择 |
 | `disabledTools` | `[]` | `standard` 预设中要禁用的行 ID 数组；ID 不存在时直接报错。不设置时不禁用任何行 |
 | `persona` | 未设置 | 覆盖 persona 行，字段见下。不设置时不修改 persona |
-| `personaPresets` | `['standard']` | 哪些预设的 persona 行接受上面的 `persona` 覆盖。只放宽 persona 行：Shell 与 `disabledTools` 仍只作用于 `standard`。必须与 `persona` 同时使用，否则报错 |
+| `personaPresets` | `['standard']` | 严格选择接受 `persona` 覆盖的预设，`standard` 也必须在名单中；`[]` 停用全部覆盖。未配置 `persona` 时可预先填写名单，不报错。Shell 与 `disabledTools` 仍只作用于 `standard` |
 | `includeHarnessIdentity` | 未设置 | 是否保留 `harness:identity` 段（`You are an AI agent powered by DeepSeek Harness.`）。不设置时不修改；`false` 隐藏该句 |
-| `normalizeWindowsPaths` | `false` | 仅 Bash 两模式：命令进入 bash 前把 `C:\a\b` 改写成 `C:/a/b`。设到其他模式会报错 |
+| `normalizeWindowsPaths` | `false` | 仅 Bash 两模式：进入 bash 前纠正简单参数中的 `C:\a\b`。其他模式或未配置 Shell 时忽略该值，不报错 |
 | `bashPath` | 未设置 | 可选。显式指定 Bash 可执行文件（Windows 上通常要指向 Git Bash）；省略时持久化模式用官方默认 `/bin/bash`，一次性模式在无需改写时保持官方行不动 |
 | `pwshPath` | 未设置 | 可选。建议显式填写以固定版本；省略时委托官方 PowerShell 探测 |
 | `timeoutMs` | `300000` | 正整数。持久化模式为命令截止时间；一次性模式沿用官方等待、后台处理与上限 |
 | `envContext` | 未设置（选了 `shellMode` 时按 `true`） | 是否向模型添加环境事实段：平台与工作区对每个预设都给出，Shell 通道细节（模式、可执行文件、参数语义、截止时间）只在行补丁确实配置过该预设时给出。显式写 `true` 时即使未配置 Shell 也会贡献平台与工作区；显式写 `false` 不贡献该段但仍保留工具操作规则；什么都不配置时本插件零影响 |
+
+受支持的配置可以任意组合并预先填写，只有适用字段参与校验和执行。例如 PowerShell 模式保留 `normalizeWindowsPaths: true` 或无效的 `bashPath` 不影响启动；没有接管 Shell 时 `timeoutMs` 不参与校验。正在生效的无效路径、类型、未知 `shellMode` 与废弃字段仍明确报错。
 
 `disabledTools` 按 `standard` 预设的行 ID 生效，包含分组内的行。常用 ID 有 `tool-web`、`tool-workflow`、`tool-ralph`、`skill-filesystem`；完整列表见安装中 `@deepseek-ai/dsh-web-app/presets/standard.patch.yml` 的 `config.plugins`。本插件只做 `disabled: true`，不改变这些行的其他配置。
 
@@ -103,9 +105,9 @@ Shell 补丁、行补丁与提示词平面三者互不牵连：**行补丁只作
 | `complete` | `false` | 写 `true` 会把 `prefix` 变成整个系统提示词，抑制 suffix 与所有其他段落 |
 | `includeRuntimeContext` | `true` | 写 `false` 会抑制该 agent 作用域的运行时上下文快照 |
 
-行补丁整体替换 `config`，本插件先展开当前有效配置再覆盖你写出的字段，因此未写的字段（例如官方 suffix）会保留。`complete` 与 `includeRuntimeContext` 即使未写也会显式落成上表默认值，避免上游把提示词锁成单句。字段内的 `{{...}}` 按宿主已注册的变量严格插值，变量不存在会让组装报错。`persona` 至少写一个字段，键名或类型写错会在启动时直接报错。
+行补丁整体替换 `config`，本插件先展开当前有效配置再覆盖你写出的字段，因此未写的字段（例如官方 suffix）会保留。`complete` 与 `includeRuntimeContext` 即使未写也会显式落成上表默认值，避免上游把提示词锁成单句。字段内的 `{{...}}` 按宿主已注册的变量严格插值，变量不存在会让组装报错。生效的 `persona` 至少写一个字段，键名或类型写错会在匹配预设注册时直接报错；空名单或没有匹配目标时不校验正文。
 
-`personaPresets` 让同一份人设覆盖多个同构预设（官方 `standard`、`ptc`、`cordis` 的 persona 行结构一致）。写出 `ptc` 或 `cordis` 不会带来 `standard` 的 Shell 覆盖与行 ID 清单，那些改动仍只作用于 `standard`。刻意排除 `minimal`：它的 persona 行是 `complete: true` + `includeRuntimeContext: false`，而本插件会显式写入 `complete: false` + `includeRuntimeContext: true`，列进去等于把它从单句提示词改回普通会话。列出的预设若被上游改了 persona 行结构，启动时直接报错；写错预设 id 不会报错（宿主不提供可枚举的预设清单），只是那个预设静默拿不到人设。
+`personaPresets` 严格控制覆盖名单（官方 `standard`、`ptc`、`cordis` 的 persona 行结构一致）。例如 `['ptc']` 只修改 ptc，standard 保留原 persona；`[]` 停用全部覆盖并保留正文；没有 `persona` 时名单可以预先填写。只在命中名单时校验 persona 正文及目标行结构。Shell 与 `disabledTools` 继续独立作用于 standard。`minimal` 不在默认名单内：它的 `complete: true` + `includeRuntimeContext: false` 会被普通 persona 默认值覆盖，列入它意味着显式改变单句提示词策略。不存在的预设 id 不产生补丁，也不报错。
 
 行补丁在 `internal/config` 阶段生效，因此**被列出的预设行必须先等到本插件就绪**。[bundle 补丁](cordis.patch.yml)已为 `preset-standard`、`preset-ptc`、`preset-cordis`、`preset-minimal` 各加一条 `dshDefaultOverridesReady`；若把**自建预设**列进 `personaPresets`，要自己在那条行上补同样的 `inject`，否则插件钩子尚未注册、该预设的 config 已经解析完，补丁会被静默丢弃。
 
@@ -115,8 +117,9 @@ Shell 补丁、行补丁与提示词平面三者互不牵连：**行补丁只作
 
 `normalizeWindowsPaths` 解决 Windows 上 Bash 把反斜杠当转义符吃掉的问题：`cd C:\Users\me` 在 bash 里会变成 `cd C:Usersme` 而失败。开启后，`C:\a\b` 会在命令进入 bash **之前**被改写成 `C:/a/b`，一次性与持久化两种 Bash 模式都生效：
 
-- 只改写盘符开头的路径段；引号内的路径（含空格）一路改写到配对引号；`sed 's/\\d//'`、`"a\tb"` 这类正则与转义里的反斜杠不受影响。
-- UNC 路径（`\\server\share`）不在覆盖范围；若某条命令需要把 Windows 反斜杠路径当字面量传给只认反斜杠的原生程序（例如 `robocopy`），改写会改变它的含义，这类命令请关闭该选项或改用该程序可接受的写法。
+- 只改写整个简单参数为盘符路径的情况，支持未引用或整体单/双引号引用的路径（含空格）；混合引用、sed 表达式与内嵌程序中的盘符片段保持原文。
+- 遇到展开、转义引号、heredoc、复合语法或未闭合引号时，整条命令原文透传，不会先改前半段再退出。复杂命令请显式使用正确的正斜杠路径。
+- UNC 路径（`\\server\share`）不在覆盖范围；需要反斜杠字面量的程序仍应关闭此选项。它纠正简单路径参数，不承诺任意程序的应用层语义等价。
 - 持久化模式通过给 `dsh-terminal-bash` 传官方 `shellArgs`、用 `--rcfile` 加载一个垫片实现（写在系统临时目录 `dsh-default-overrides-bashrc.sh`，每次启动重新生成）。垫片只在命令里出现 `X:\` 时才启动 node 做改写，其他命令原样透传。
 - 该改写依赖宿主持久化工具仍以 `eval --` 包装命令；宿主改版后垫片可能静默失效——命令照常执行，只是不再改写。
 
@@ -133,7 +136,7 @@ bundle 已为 `preset-standard` 添加 `dshDefaultOverridesReady`。如果用户
 - 更新时对同一 profile 执行 `add` 并指定新版本，然后完整重启 DSH。
 - 在插件管理器中以**整个 bundle**为单位停用；仅禁用主插件行会让 `standard` 等不到 ready。卸载可执行 `dsh plugin --profile web remove dsh-default-overrides`。
 - 停用或卸载时，删除用户层针对 `local-dsh-default-overrides` 的配置；若旧部署手工添加过 ready 依赖，也要仅移除该依赖并保留其他依赖。
-- 仍支持直接文件部署，使用 [examples/file.cordis.patch.yml](examples/file.cordis.patch.yml)，同时部署[主插件](scripts/dsh-default-overrides.mjs)和同目录[适配器](scripts/gitbash-executor.mjs)。文件入口与 bundle 二选一。
+- 仍支持直接文件部署，使用 [examples/file.cordis.patch.yml](examples/file.cordis.patch.yml)，同时部署[主插件](scripts/dsh-default-overrides.mjs)、同目录[适配器](scripts/gitbash-executor.mjs)和[路径模块](scripts/command-paths.mjs)。文件入口与 bundle 二选一。
 
 ## 验证
 

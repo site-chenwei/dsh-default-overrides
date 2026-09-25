@@ -14,12 +14,16 @@
     disabledTools:
       - tool-web
       - tool-workflow
-    # Override the standard persona row; unset fields keep their current values.
+    # Only listed presets receive this persona; [] disables all overrides.
+    personaPresets:
+      - standard
+      - ptc
+      - cordis
     persona:
       prefix: 'You are a helpful software engineer assistant.'
     # Hide the global harness:identity section for the whole profile.
     includeHarnessIdentity: false
-    # Rewrite C:\a\b to C:/a/b before bash parses the command (bash modes only).
+    # Rewrite simple Windows path arguments in Bash; ignored in other modes.
     normalizeWindowsPaths: true
 
 # The bundle supplies preset-standard.inject. If another patch overrides inject,

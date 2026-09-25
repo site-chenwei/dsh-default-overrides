@@ -2,6 +2,8 @@
 
 Status: implemented
 
+本记录的非空名单和必须同时配置 persona 的约束已由[配置适用范围与命令安全](2026-09-25-option-applicability-and-command-safety.md)部分取代；现在允许空名单与预配置，standard 也严格遵守名单。ready 接线与预设隔离的理由继续成立。
+
 ## Problem
 
 `persona` 行补丁只作用于官方 `standard`：这是插件声明兼容的结构基线。但 `ptc` 与 `cordis` 的 `persona` 行与 `standard` 同构（同一行 id、同一包名、`prefix` 为字符串），使用者在这些预设下拿不到自己配置的人设，只能退回官方默认的 `You are a coding agent powered by the {{model}} model.`。实际后果是同一套工作规则在 `standard` 由系统提示词承载、在其他预设只剩 `AGENTS.md`（首个用户轮注入，权威更低），而 `minimal` 连 `agent-instructions` 行都没有，规则完全缺失。

@@ -16,7 +16,7 @@ const SHELL_GROUP_ID = 'local-standard-persistent-shell';
 const ENVIRONMENT_SECTION = 'local:dsh-default-overrides:environment';
 const PERSONA_ROW = { id: 'persona', name: '@deepseek-ai/dsh-persona' };
 const PERSONA_KEYS = ['prefix', 'suffix', 'complete', 'includeRuntimeContext'];
-// persona 行补丁默认只作用官方 standard；personaPresets 可放宽到结构相同的其他预设，Shell 与工具行补丁不受影响。
+// persona 名单对所有预设一视同仁；省略时只覆盖 standard。
 const DEFAULT_PERSONA_PRESETS = ['standard'];
 const SHIM_FILENAME = 'dsh-default-overrides-bashrc.sh';
 
@@ -167,13 +167,9 @@ export async function apply(ctx, options = {}) {
     throw new Error('dsh-default-overrides: disabledTools must be an array of standard preset row ids');
   }
   const persona = options.persona;
-  if (persona !== undefined) verifyPersonaOption(persona);
-  const personaPresets = options.personaPresets ?? DEFAULT_PERSONA_PRESETS;
-  if (!Array.isArray(personaPresets) || personaPresets.length === 0 || personaPresets.some(id => typeof id !== 'string' || id.length === 0)) {
-    throw new Error('dsh-default-overrides: personaPresets must be a non-empty array of agent preset ids');
-  }
-  if (persona === undefined && options.personaPresets !== undefined) {
-    throw new Error('dsh-default-overrides: personaPresets only widens the persona row patch; configure persona as well');
+  const personaPresets = persona === undefined ? [] : options.personaPresets ?? DEFAULT_PERSONA_PRESETS;
+  if (!Array.isArray(personaPresets) || personaPresets.some(id => typeof id !== 'string' || id.length === 0)) {
+    throw new Error('dsh-default-overrides: personaPresets must be an array of agent preset ids');
   }
   const includeHarnessIdentity = options.includeHarnessIdentity;
   if (includeHarnessIdentity !== undefined && typeof includeHarnessIdentity !== 'boolean') {
@@ -187,16 +183,10 @@ export async function apply(ctx, options = {}) {
   if (shellPath !== undefined && (typeof shellPath !== 'string' || !isAbsolute(shellPath) || !existsSync(shellPath) || !statSync(shellPath).isFile())) {
     throw new Error(`dsh-default-overrides: ${pathKey} must name an existing absolute executable`);
   }
-  const timeoutMs = options.timeoutMs ?? 300000;
-  if (shellEnabled && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)) {
-    throw new Error('dsh-default-overrides: timeoutMs must be a positive safe integer');
-  }
-  const normalizeWindowsPaths = options.normalizeWindowsPaths ?? false;
+  // Note: 先确定适用范围，再校验有效值；无关配置可预先保留 — 见 .agents/notes/implemented/feature/2026-09-25-option-applicability-and-command-safety.md。
+  const normalizeWindowsPaths = shellEnabled && dialect === 'bash' ? options.normalizeWindowsPaths ?? false : false;
   if (typeof normalizeWindowsPaths !== 'boolean') {
     throw new Error('dsh-default-overrides: normalizeWindowsPaths must be a boolean');
-  }
-  if (normalizeWindowsPaths && (!shellEnabled || dialect !== 'bash')) {
-    throw new Error('dsh-default-overrides: normalizeWindowsPaths only applies to shellMode bash or persistent-bash');
   }
   const envContext = options.envContext;
   if (envContext !== undefined && typeof envContext !== 'boolean') {
@@ -206,6 +196,10 @@ export async function apply(ctx, options = {}) {
   const officialBashFallback = shellEnabled && !persistent && dialect === 'bash' && shellPath === undefined && !normalizeWindowsPaths;
   // managedShell：插件是否真的接管了这个方言通道（决定工具说明补充与 Shell 通道声明）。
   const managedShell = shellEnabled && !officialBashFallback;
+  const timeoutMs = managedShell ? options.timeoutMs ?? 300000 : undefined;
+  if (managedShell && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)) {
+    throw new Error('dsh-default-overrides: timeoutMs must be a positive safe integer');
+  }
   // 环境事实段是独立提示词选项：显式配置说了算；未配置时只在选了 Shell 模式才贡献（空配置仍是零影响）。
   const environmentEnabled = envContext ?? shellEnabled;
   const [{ default: AgentPreset }, { applyEntryPatches }, { default: SystemPrompt }] = await Promise.all([
@@ -214,14 +208,13 @@ export async function apply(ctx, options = {}) {
     ctx.loader.import('@deepseek-ai/dsh-system-prompt'),
   ]);
   const patched = new WeakMap();
-  // 真正被本插件打过 Shell/工具行补丁的预设 id：提示词平面据此判断"这个预设的 Shell 通道是否由本插件配置"，而不是按预设名判断。
+  // 只记录确实替换过 Shell 行的预设；persona 和工具禁用不声明通道所有权。
   const configuredShellPresets = new Set();
   let shimPath;
 
   function shellPatches() {
     // Note: 归一化必须在 bash 解析命令前完成，持久化模式只能靠 eval 垫片 — 见 .agents/notes/implemented/feature/2026-09-24-windows-path-normalization.md。
-    const rewritePaths = normalizeWindowsPaths && dialect === 'bash';
-    if (officialBashFallback) return [];
+    const rewritePaths = normalizeWindowsPaths;
     if (rewritePaths && persistent) shimPath ??= writeBashShim();
     const backendRows = persistent ? [
       { id: 'pty', name: '@deepseek-ai/dsh-terminal' },
@@ -291,26 +284,29 @@ export async function apply(ctx, options = {}) {
     // 行补丁分两类：Shell 与工具行仍只作用于官方 standard 预设：它是本插件声明兼容的结构基线（persona 行、tool-bash/tool-pwsh 行、行 ID 清单都在那里）。
     if (this.runtime?.callback !== AgentPreset) return config;
     const structural = config.id === 'standard';
-    // Note: personaPresets 只放宽 persona 行，不碰 Shell 与工具行 — 见 .agents/notes/implemented/feature/2026-09-25-persona-across-presets.md。
-    const personaOnly = !structural && persona !== undefined && personaPresets.includes(config.id);
-    if (!structural && !personaOnly) return config;
+    // Note: standard 与其他预设共用名单判断，空名单停用覆盖 — 见 .agents/notes/implemented/feature/2026-09-25-option-applicability-and-command-safety.md。
+    const applyPersona = persona !== undefined && personaPresets.includes(config.id);
+    const applyShell = structural && managedShell;
+    if (!applyPersona && !applyShell && (!structural || disabledTools.length === 0)) return config;
     if (patched.has(config)) return patched.get(config);
-    if (structural && !shellEnabled && disabledTools.length === 0 && persona === undefined) return config;
     const rows = flattenRows(config.plugins);
-    const patches = personaOnly ? [personaPatch(rows, config.id)] : [];
+    const patches = [];
+    if (applyPersona) {
+      verifyPersonaOption(persona);
+      patches.push(personaPatch(rows, config.id));
+    }
     if (structural) {
-      if (shellEnabled) verifyShellRows(rows);
       // 上游行 ID 变化时明确报错，避免 applyEntryPatches 只留一条 warning 后静默不生效。
       for (const id of disabledTools) {
         if (!rows.some(row => row.id === id)) {
           throw new Error(`dsh-default-overrides: disabledTools names ${JSON.stringify(id)}, which is not a row of the standard preset`);
         }
       }
-      patches.push(
-        ...disabledTools.map(id => ({ id, disabled: true })),
-        ...(persona === undefined ? [] : [personaPatch(rows, config.id)]),
-        ...(shellEnabled ? shellPatches() : []),
-      );
+      patches.push(...disabledTools.map(id => ({ id, disabled: true })));
+    }
+    if (applyShell) {
+      verifyShellRows(rows);
+      patches.push(...shellPatches());
     }
     const result = {
       ...config,
@@ -318,8 +314,7 @@ export async function apply(ctx, options = {}) {
     };
     patched.set(config, result);
     patched.set(result, result);
-    // 只有真的打过 Shell/工具行补丁的预设才算本插件接管的通道。
-    if (structural) configuredShellPresets.add(config.id);
+    if (applyShell) configuredShellPresets.add(config.id);
     return result;
   }, { global: true });
 

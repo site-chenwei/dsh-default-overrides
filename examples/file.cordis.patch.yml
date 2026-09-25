@@ -20,10 +20,24 @@
           prefix: 'You are a helpful software engineer assistant.'
         # Hide the global harness:identity section for the whole profile.
         includeHarnessIdentity: false
-        # Rewrite C:\a\b to C:/a/b before bash parses the command (bash modes only).
+        # Rewrite simple Windows path arguments in Bash; ignored in other modes.
         normalizeWindowsPaths: true
 
-# Retain any other existing inject dependencies on preset-standard.
+# Deploy all three scripts together: dsh-default-overrides.mjs,
+# gitbash-executor.mjs and command-paths.mjs.
+# Retain any other existing inject dependencies on these rows.
 - id: preset-standard
+  inject:
+    - dshDefaultOverridesReady
+- id: preset-ptc
+  inject:
+    - dshDefaultOverridesReady
+- id: preset-cordis
+  inject:
+    - dshDefaultOverridesReady
+- id: preset-minimal
+  inject:
+    - dshDefaultOverridesReady
+- id: system-prompt
   inject:
     - dshDefaultOverridesReady

@@ -1,52 +1,65 @@
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
-// Note: 命令归一化的唯一样板，供一次性适配器与持久化 eval 垫片共用 — 见 .agents/notes/implemented/feature/2026-09-24-windows-path-normalization.md。
+// Note: 只改整个简单路径词，复杂语法整条透传以保留 Shell 结构 — 见 .agents/notes/implemented/feature/2026-09-25-option-applicability-and-command-safety.md。
+const WORD_BREAK = /[\s;|&<>]/;
+const DRIVE_PATH = /^[A-Za-z]:\\/;
 
-/** 引号外遇到这些字符就结束路径段；引号内以配对引号为界。 */
-const OUTSIDE_DELIMITERS = /[\s'"`;|&<>()]/;
-
-/** 判断 index 处是否是 `X:\` 形式的盘符前缀（排除标识符中间）。 */
-function drivePrefixAt(text, index) {
-  if (index > 0 && /[A-Za-z0-9_]/.test(text[index - 1])) return false;
-  return /[A-Za-z]/.test(text[index] ?? '') && text[index + 1] === ':' && text[index + 2] === '\\';
-}
-
-/** 路径段结束位置：引号内到配对引号，引号外到空白或 shell 元字符。 */
-function tokenEnd(text, start, quote) {
-  let end = start;
-  while (end < text.length) {
-    const char = text[end];
-    if (quote === '') {
-      if (OUTSIDE_DELIMITERS.test(char)) break;
-    } else if (char === quote) break;
-    end += 1;
-  }
-  return end;
+/** 一个完整的简单词可以整体引用；混合引用、展开和转义元字符不属于路径参数。 */
+function normalizeWord(word) {
+  const quote = word[0] === "'" || word[0] === '"' ? word[0] : '';
+  const path = quote ? word.slice(1, -1) : word;
+  if (!DRIVE_PATH.test(path)) return word;
+  // 引用、展开与转义元字符原样保留，避免替换反斜杠后改变 Bash 的解析。
+  if (/["'`$<>|?*\r\n]/.test(path) || /\\[\\\s;&(){}\[\]!#~]/.test(path)) return word;
+  if (!quote && /[\s;&(){}\[\]!#~]/.test(path)) return word;
+  return `${quote}${path.replaceAll('\\', '/')}${quote}`;
 }
 
 /**
- * 把形如 `C:\Users\name` 的 Windows 路径改写为 `C:/Users/name`。
- * 只改写盘符开头的路径段，正则、转义等其他反斜杠保持原样。
- * @param {string} command - 模型给出的原始命令文本。
- * @returns {string} bash 解析后仍能拿到反斜杠的等价命令。
+ * 只纠正简单参数中的 Windows 盘符路径。
+ * 不解析展开、heredoc、复合语法或转义引号；整条命令保持原样，避免部分改写后改变语法。
  */
 export function normalizeWindowsPaths(command) {
   let out = '';
   let index = 0;
-  let quote = '';
   while (index < command.length) {
-    if (drivePrefixAt(command, index)) {
-      const end = tokenEnd(command, index, quote);
-      out += command.slice(index, end).replaceAll('\\', '/');
+    const char = command[index];
+    if (WORD_BREAK.test(char)) {
+      if (command.startsWith('<<', index)) return command;
+      out += char;
+      index += 1;
+      continue;
+    }
+    if (char === '#') {
+      const end = command.indexOf('\n', index);
+      if (end === -1) return out + command.slice(index);
+      out += command.slice(index, end);
       index = end;
       continue;
     }
-    const char = command[index];
-    if (quote === '' && (char === '"' || char === "'")) quote = char;
-    else if (char === quote) quote = '';
-    out += char;
-    index += 1;
+    const start = index;
+    let quote = '';
+    while (index < command.length) {
+      const current = command[index];
+      if (!quote && WORD_BREAK.test(current)) break;
+      if (quote !== "'" && /[$`(){}]/.test(current)) return command;
+      if (current === '\\' && quote !== "'") {
+        const next = command[index + 1];
+        if (next === undefined || /[\s"'`$\\;|&<>(){}]/.test(next)) return command;
+        index += 2;
+        continue;
+      }
+      if (!quote && (current === "'" || current === '"')) quote = current;
+      else if (current === quote) quote = '';
+      index += 1;
+    }
+    if (quote) return command;
+    const word = command.slice(start, index);
+    // 只接受无引用的词，或被一对引号完整包裹的词；拼接引用原样保留。
+    const quoted = word[0] === "'" || word[0] === '"';
+    const body = quoted ? word.slice(1, -1) : word;
+    out += /["']/.test(body) ? word : normalizeWord(word);
   }
   return out;
 }

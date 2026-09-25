@@ -26,20 +26,20 @@ bundle 会为全局 `system-prompt` 行添加 `dshDefaultOverridesReady` 等待�
 4. 如果旧 profile 的 `preset-standard.inject` 只有 `dshDefaultOverridesReady`，可以删除这条用户层补丁，交给 bundle；若还有其他依赖，则保留完整依赖列表。ready 必须保留在最终合成结果中。
 5. 完整重启 DSH，新建 `standard` 会话。稳定后再移除不再使用的旧插件副本。
 
-不要同时启用文件入口与 bundle。停用或卸载时以整个 bundle 为单位，并清理对应用户层配置及手工 ready 依赖；仅禁用主插件行会让标准预设等不到 ready。回退到文件部署时，先停用 bundle，再恢复备份的两文件和用户补丁。
+不要同时启用文件入口与 bundle。停用或卸载时以整个 bundle 为单位，并清理对应用户层配置及手工 ready 依赖；仅禁用主插件行会让标准预设等不到 ready。回退到文件部署时，先停用 bundle，再恢复备份的三个模块文件和用户补丁。
 
 ## 保留文件部署
 
-同时部署 [主插件](scripts/dsh-default-overrides.mjs) 和 [Git Bash 适配器](scripts/gitbash-executor.mjs)，保持同目录。可以直接引用本仓库 `scripts/` 中的文件，也可以将两者复制到 DSH 的本地插件目录。一次性 `bash` 模式会按主插件位置加载适配器。
+同时部署 [主插件](scripts/dsh-default-overrides.mjs)、[Git Bash 适配器](scripts/gitbash-executor.mjs) 和 [路径归一化模块](scripts/command-paths.mjs)，保持同目录。可以直接引用本仓库 `scripts/` 中的文件，也可以将三者复制到 DSH 的本地插件目录。适配器无条件导入归一化模块，即使关闭改写也必须交付第三个文件。
 
-如果宿主配置此前直接引用仓库根目录的入口，将文件 URL 改为 `.../scripts/dsh-default-overrides.mjs`；复制到独立插件目录的部署仍只需保证两个插件文件同目录。
+如果宿主配置此前直接引用仓库根目录的入口，将文件 URL 改为 `.../scripts/dsh-default-overrides.mjs`；复制到独立插件目录的部署仍只需保证三个模块文件同目录。
 
 备份实际使用的插件文件和 profile 配置。若旧文件已合并其他定制，在原文件上合并差异，不用基础版本整份覆盖。运行中的 DSH 可能监视配置修改，因此完成修改后仍需完整重启；若模型正在被修改的 DSH 中工作，先保存修改与重启交接信息，再从独立终端重启。
 
 将[文件部署示例](examples/file.cordis.patch.yml)合并到宿主 profile：
 
 - 只保留一个 `local-dsh-default-overrides` 活动入口；已有该条目时修改原条目。
-- `preset-standard.inject` 必须包含 `dshDefaultOverridesReady`，并保留它已有的其他依赖。
+- `preset-standard`、`preset-ptc`、`preset-cordis`、`preset-minimal` 和全局 `system-prompt` 的 `inject` 必须包含 `dshDefaultOverridesReady`，并保留已有依赖；文件部署示例已接好这些行。
 - 不要把 ready 依赖加在 `agent-preset-registry` 上；仅改变 YAML 行顺序不能保证异步钩子已注册。
 - 两条路径可同时保留，选择哪个模式就使用对应路径。当前路径无效直接报错，不跨家族回退。
 
@@ -53,7 +53,7 @@ bundle 会为全局 `system-prompt` 行添加 `dshDefaultOverridesReady` 等待�
 | `standardPersistentGitBashReady` | 发布方和 `preset-standard.inject` 一起改为 `dshDefaultOverridesReady` |
 | 公共 `shellPath` | Bash 家族改为 `bashPath`，Pwsh 家族改为 `pwshPath`，显式配置 `shellMode`；旧键会报告迁移错误 |
 | 两路径互斥 | 现在允许并存，仅使用和验证当前家族的路径 |
-| 只部署主插件 | 补齐同目录的 [Git Bash 适配器](scripts/gitbash-executor.mjs) |
+| 只部署主插件或两个文件 | 补齐同目录的 [Git Bash 适配器](scripts/gitbash-executor.mjs) 和 [路径归一化模块](scripts/command-paths.mjs) |
 | `blockNestedShells: true` | 删除此配置；本版本明确拒绝旧启用项，`false` 可作为无操作的旧配置保留 |
 | 全局 PATH shim | 本版本不再创建或注入；完整重启旧 DSH，清除旧进程内存中的 PATH 前缀 |
 

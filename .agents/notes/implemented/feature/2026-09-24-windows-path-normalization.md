@@ -2,6 +2,8 @@
 
 Status: implemented
 
+本记录的“非 Bash 配置报错”和“任意路径片段改写”规则已由[配置适用范围与命令安全](2026-09-25-option-applicability-and-command-safety.md)部分取代；共用归一化模块与持久化 eval 垫片的理由继续成立。
+
 ## Problem
 
 在 Windows 上启用 Bash 通道后，模型会写出未加引号且使用反斜杠的路径，例如 `cd C:\Users\chenwei\xwfintech\xwfintech-components\packages\h5-business-components\docs && pwd`。bash 把反斜杠当转义符，命令**解析成功**（退出码 0）但路径已变成 `C:Userschenweixwfintech...`，错误发生在 `cd` 找不到目录这一步。

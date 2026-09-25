@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -32,7 +32,7 @@ try {
     process.env.npm_execpath, 'pack', '--json', '--ignore-scripts', '--pack-destination', scratch,
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] })));
   const files = new Set(archive.files.map(file => file.path));
-  for (const file of ['package.json', 'cordis.patch.yml', 'scripts/dsh-default-overrides.mjs', 'scripts/gitbash-executor.mjs']) {
+  for (const file of ['package.json', 'cordis.patch.yml', 'scripts/dsh-default-overrides.mjs', 'scripts/gitbash-executor.mjs', 'scripts/command-paths.mjs']) {
     assert(files.has(file), `archive is missing ${file}`);
   }
   assert(!archive.files.some(file => /^(?:node_modules|\.idea|\.git)\//.test(file.path)), 'no local dependencies or editor state in archive');
@@ -99,6 +99,42 @@ try {
     await root.fiber.dispose();
   }
   console.log('PASS: npm artifact, offline DSH installation, automatic bundle selection, profile overrides, package imports and ready-gated preset registration');
+
+  const fileDir = join(scratch, 'file-plugin');
+  mkdirSync(fileDir);
+  for (const file of ['dsh-default-overrides.mjs', 'gitbash-executor.mjs', 'command-paths.mjs']) {
+    copyFileSync(fileURLToPath(new URL(`./scripts/${file}`, pathToFileURL(installedManifest))), join(fileDir, file));
+  }
+  const [{ entryListSchema }, yaml] = await Promise.all([
+    load('cordis-plugin-include'), import(pathToFileURL(requireDsh.resolve('js-yaml')).href),
+  ]);
+  const filePatches = yaml.load(readFileSync(join(repository, 'examples/file.cordis.patch.yml'), 'utf8'), { schema: entryListSchema });
+  const fileEntry = filePatches[0].insert[0];
+  fileEntry.name = pathToFileURL(join(fileDir, 'dsh-default-overrides.mjs')).href;
+  fileEntry.config = { ...fileEntry.config, shellMode: 'bash', bashPath, personaPresets: ['ptc'] };
+  const fileEntries = boot.composeEntries([
+    ...profile.layers.filter(layer => layer.packageName !== manifest.name).map(layer => layer.patches), filePatches,
+  ], message => { throw new Error(message); });
+  const fileRoot = new Context();
+  const filePresets = [];
+  try {
+    await fileRoot.plugin(Loader, { baseUrl: pathToFileURL(installAnchor).href });
+    fileRoot.loader.builtins.group = Group;
+    fileRoot.provide('agentPresets', { register(config) { filePresets.push(config); return () => {}; } });
+    const ids = ['preset-standard', 'preset-ptc', 'preset-cordis', 'preset-minimal', 'system-prompt', fileEntry.id];
+    await fileRoot.loader.root.update(fileEntries.filter(row => ids.includes(row.id)));
+    await fileRoot.loader.await();
+    for (const row of fileRoot.loader.entries()) await row.fiber?.await();
+    const fileStandard = filePresets.find(preset => preset.id === 'standard');
+    const filePtc = filePresets.find(preset => preset.id === 'ptc');
+    assert.notEqual(fileStandard.plugins.find(row => row.id === 'persona').config.prefix, fileEntry.config.persona.prefix);
+    assert.equal(filePtc.plugins.find(row => row.id === 'persona').config.prefix, fileEntry.config.persona.prefix);
+    const assembly = await fileRoot.systemPrompt.assemble();
+    assert(!assembly.sections.some(section => section.name === 'harness:identity'));
+    const adapter = fileStandard.plugins.find(row => row.id === 'local-standard-persistent-shell').config[0];
+    assert.equal((await fileRoot.loader.import(adapter.name)).name, 'gitbash-executor');
+  } finally { await fileRoot.fiber.dispose(); }
+  console.log('PASS: documented three-file deployment imports its adapter and gates persona/identity configuration');
 
   // Run existing process tests from the installed artifact, including relative adapter lookup.
   runNode([

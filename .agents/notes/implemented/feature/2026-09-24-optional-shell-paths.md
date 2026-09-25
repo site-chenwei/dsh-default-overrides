@@ -23,7 +23,7 @@ dsh: startup failed: 1 required plugin did not activate
 - `bash` 省略 `bashPath` 但开启 `normalizeWindowsPaths`：仍挂本插件的适配器（改写只在适配器里），适配器在 `shellPath` 未配置时不再猜路径，改为调用官方 `LocalBashExecutor.execute`，即官方默认 argv `["bash", "-c", command]`（`dsh-bash-local/lib/index.js:141`）。
 - `pwsh`（一次性）：沿用官方 `dsh-pwsh-local`，未配置路径时由该插件探测。
 
-显式配置的路径仍按原样校验：不是存在的绝对文件时直接报错，不会静默回退到默认。
+显式配置的当前家族路径仍按原样校验：不是存在的绝对文件时直接报错，不会静默回退到默认。其他家族路径与无接管时的 timeoutMs 不参与校验，见[配置适用范围与命令安全](2026-09-25-option-applicability-and-command-safety.md)。
 
 ## Alternatives considered
 
