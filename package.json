@@ -13,8 +13,7 @@
     "scripts/*.mjs",
     "cordis.patch.yml",
     "examples/",
-    "dsh-default-overrides-migration.md",
-    ".agents/notes/implemented/"
+    "dsh-default-overrides-migration.md"
   ],
   "keywords": [
     "dsh",
