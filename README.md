@@ -12,7 +12,7 @@
 - 使用 Bash 或 PowerShell 前，先在机器上安装相应程序。Windows 的 Git Bash 来自 Git for Windows。
 - 当前面向 DSH 的 `danger-full-access` 权限模式使用；执行权限仍由 DSH 管理。
 
-当前本机验证基线为 macOS、Node.js 24.15.0、DSH 0.1.7-rc.2。**Windows Git Bash / MSYS2 的接入已实现，Windows 实机与 ConPTY 验收尚未完成；PowerShell 真进程也尚未在此环境验收。** 测试宿主含既有 Bash 修补，本插件不附带该修补。插件不限制安装版本，其他 DSH / Node 版本的兼容性需要实际确认。
+当前本机验证基线为 macOS、Node.js 24.21.0、DSH 0.2.0-rc.2（npm 安装的宿主，不含任何本地宿主修补）。**Windows Git Bash / MSYS2 的接入已实现，Windows 实机与 ConPTY 验收尚未完成；PowerShell 真进程也尚未在此环境验收。** 插件不限制安装版本，其他 DSH / Node 版本的兼容性需要实际确认。
 
 ## 安装
 
@@ -34,14 +34,14 @@ dsh plugin --profile web add dsh-default-overrides
 
 ## 快速配置
 
-在 profile 配置中添加或修改**同一个** `local-dsh-default-overrides` 条目。通过插件管理器或上述命令安装后，不需要再添加 `insert` 或文件入口。
+在 profile 配置中添加或修改**同一个** `dsh-default-overrides` 条目：这一行的 `id` 与包名相同。通过插件管理器或上述命令安装后，不需要再添加 `insert`、`name` 或文件入口。
 
 ### Windows：使用 Git Bash
 
 将路径换成实际安装位置：
 
 ```yaml
-- id: local-dsh-default-overrides
+- id: dsh-default-overrides
   config:
     shellMode: persistent-bash
     bashPath: 'C:/Program Files/Git/bin/bash.exe'
@@ -50,7 +50,7 @@ dsh plugin --profile web add dsh-default-overrides
 ### macOS / Linux：使用 Bash
 
 ```yaml
-- id: local-dsh-default-overrides
+- id: dsh-default-overrides
   config:
     shellMode: persistent-bash
     bashPath: /bin/bash
@@ -74,7 +74,7 @@ dsh plugin --profile web add dsh-default-overrides
 Bash 与 PowerShell 的路径可以同时保存；切换时只修改 `shellMode`：
 
 ```yaml
-- id: local-dsh-default-overrides
+- id: dsh-default-overrides
   config:
     shellMode: persistent-pwsh
     bashPath: 'C:/Program Files/Git/bin/bash.exe'
@@ -96,7 +96,7 @@ Bash 与 PowerShell 的路径可以同时保存；切换时只修改 `shellMode`
 下面的配置将同一人设应用于 `standard`、`ptc` 和 `cordis`：
 
 ```yaml
-- id: local-dsh-default-overrides
+- id: dsh-default-overrides
   config:
     personaPresets:
       - standard
@@ -124,7 +124,7 @@ Bash 与 PowerShell 的路径可以同时保存；切换时只修改 `shellMode`
 ### 禁用指定工具
 
 ```yaml
-- id: local-dsh-default-overrides
+- id: dsh-default-overrides
   config:
     disabledTools:
       - tool-web
@@ -136,7 +136,7 @@ Bash 与 PowerShell 的路径可以同时保存；切换时只修改 `shellMode`
 ### 调整身份提示和环境说明
 
 ```yaml
-- id: local-dsh-default-overrides
+- id: dsh-default-overrides
   config:
     includeHarnessIdentity: false
     envContext: true
@@ -178,6 +178,7 @@ Git Bash 和独立 MSYS2 Bash 属于当前接入的 MSYS 家族。**DSH 在 Wind
 | 现象 | 处理方式 |
 |---|---|
 | 修改配置后没有变化 | 确认修改的是正在使用的 profile，完整重启 DSH 并新建会话；Shell 配置还要求使用 `standard` 预设 |
+| 升级到 0.5.0 后配置全部失效 | 配置行 ID 已改为 `dsh-default-overrides`，见[迁移说明](dsh-default-overrides-migration.md)；沿用旧 ID 的行只会收到警告并被跳过 |
 | Windows 提示 Bash 不兼容或找不到入口 | 显式填写 Git Bash / MSYS2 的实际路径，检查报错中的入口是否选到了 WSL 启动器或其他 Bash |
 | Windows 路径检查失败 | 检查所选 Bash 能否找到 `cygpath`，以及初始化配置是否改变了 PATH；保留完整的错误阶段信息 |
 | 环境检查超时 | 检查 Bash 启动配置中是否有耗时操作或等待输入的命令 |
@@ -201,7 +202,7 @@ dsh plugin --profile web add dsh-default-overrides@版本号
 dsh plugin --profile web remove dsh-default-overrides
 ```
 
-然后删除 profile 中针对 `local-dsh-default-overrides` 的配置，再完整重启 DSH。需要暂时停用时，在插件管理器中停用整个插件包。不要仅禁用主条目；旧文件部署还需清理手工添加的等待依赖。
+然后删除 profile 中针对 `dsh-default-overrides` 的配置，再完整重启 DSH。需要暂时停用时，在插件管理器中停用整个插件包。不要仅禁用主条目；旧文件部署还需清理手工添加的等待依赖。
 
 旧版本升级、文件部署和回退步骤见 [迁移说明](dsh-default-overrides-migration.md)。
 

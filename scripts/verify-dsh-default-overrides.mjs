@@ -48,7 +48,7 @@ const pwshPath = livePwshPath ?? process.execPath;
 assert.notEqual(bashPath, pwshPath, 'use different Bash/Pwsh paths to detect cross-family routing');
 
 function overrideRow(config) {
-  return { id: 'local-dsh-default-overrides', name: PRESET, config };
+  return { id: 'dsh-default-overrides', name: PRESET, config };
 }
 function withReady(row) {
   return { ...structuredClone(row), inject: ['dshDefaultOverridesReady'] };
@@ -270,7 +270,7 @@ try {
   await assert.rejects(() => registeredPreset({ persona: { prefix: PERSONA } }, sparse), /review preset compatibility/);
   await registeredPreset({ shellMode: 'bash', bashPath }, sparse);
   await registeredPreset({ shellMode: 'persistent-bash', bashPath, pwshPath }, standard, async (root, received) => {
-    await root.loader.update('local-dsh-default-overrides', { config: { shellMode: 'pwsh', bashPath, pwshPath } });
+    await root.loader.update('dsh-default-overrides', { config: { shellMode: 'pwsh', bashPath, pwshPath } });
     await settle(root);
     assert.equal(received.length, 2, 'ready service replacement reloads preset');
     const group = received.at(-1).plugins.filter(row => row.id === GROUP_ID);

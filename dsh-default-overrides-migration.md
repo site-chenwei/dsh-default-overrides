@@ -8,6 +8,22 @@
 
 更新后完整重启 DSH，并新建会话确认设置。旧会话可能保留原来的配置和终端状态。
 
+## 升级到 0.5.0
+
+宿主配置行的 ID 从 `local-dsh-default-overrides` 改成与包名一致的 `dsh-default-overrides`，`config` 的字段和取值都没有变化。升级后必须同步改 profile 里的这一行：
+
+```yaml
+- id: dsh-default-overrides
+  config:
+    # 原来是 local-dsh-default-overrides；原样保留其中的字段
+    shellMode: persistent-bash
+    bashPath: /bin/bash
+```
+
+不改名的后果不是启动报错：补丁匹配不到任何行时，DSH 只发出警告并跳过，插件以空配置激活，于是 Shell 选择、工具禁用、人设和框架身份提示全部静默回到默认。**升级后如果发现"包装上了但什么都不生效"，先检查这一行是不是还在用旧 ID。**
+
+同一个 profile 只保留一个 `dsh-default-overrides` 条目，改名后删掉旧的那行。文件部署同样把入口行改名，五个运行模块与配置保持同版本。
+
 ## 升级到 0.4.0
 
 Windows 的 `bash` 和 `persistent-bash` 现在都使用以下规则：
@@ -19,7 +35,7 @@ Windows 的 `bash` 和 `persistent-bash` 现在都使用以下规则：
 如果希望使用 Git Bash，建议明确填写实际路径：
 
 ```yaml
-- id: local-dsh-default-overrides
+- id: dsh-default-overrides
   config:
     shellMode: persistent-bash
     bashPath: 'C:/Program Files/Git/bin/bash.exe'
@@ -45,7 +61,7 @@ disabledTools:
 
 ## 从文件部署迁移到插件包
 
-1. 备份旧配置，保存 `local-dsh-default-overrides` 中全部仍需要的 `config` 字段。
+1. 备份旧配置，保存 `dsh-default-overrides`（0.4.0 及更早为 `local-dsh-default-overrides`）中全部仍需要的 `config` 字段。
 2. 删除旧的 `insert` 文件入口及旧命名的重复入口。
 3. 按 [安装步骤](README.md#安装)安装插件包。
 4. 将原配置改为 [配置示例](examples/cordis.patch.yml)的形式：保留 `id` 和 `config`，去掉旧的 `name: file://...` 与 `insert`。
@@ -91,7 +107,8 @@ Shell 选择和工具禁用仍只影响 `standard`。将自建预设加入 `pers
 
 | 旧配置或部署方式 | 处理方式 |
 |---|---|
-| `standard-persistent-git-bash` 旧入口 | 按当前示例改用 `local-dsh-default-overrides`，只保留一个活动入口 |
+| `standard-persistent-git-bash` 旧入口 | 按当前示例改用 `dsh-default-overrides`，只保留一个活动入口 |
+| `local-dsh-default-overrides` 旧行 ID | 0.5.0 起改为 `dsh-default-overrides`，`config` 内容不变 |
 | `standardPersistentGitBashReady` | 在旧配置中统一改为 `dshDefaultOverridesReady` |
 | `shellPath` | 根据所选模式改为 `bashPath` 或 `pwshPath`，并明确设置 `shellMode` |
 | Bash 与 PowerShell 路径只能二选一 | 现在可同时保留，切换 `shellMode` 即可 |

@@ -54,14 +54,14 @@ try {
 
   // Exercise the documented user layer, then inspect the real DSH composition.
   writeFileSync(join(profileDir, 'cordis.patch.yml'), JSON.stringify([
-    { id: 'local-dsh-default-overrides', config: { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], persona: { prefix: 'You are a helpful software engineer assistant.' } } },
+    { id: 'dsh-default-overrides', config: { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], persona: { prefix: 'You are a helpful software engineer assistant.' } } },
   ]));
   const profile = boot.loadProfileDirectory('dsh', profileDir, installAnchor);
   assert(profile.layers.some(layer => layer.packageName === manifest.name), 'bundle passes host compatibility and patch loading');
   const warnings = [];
   const entries = boot.composeEntries([...profile.layers.map(layer => layer.patches), profile.patches], message => warnings.push(message));
   assert.deepEqual(warnings, []);
-  const entry = entries.find(row => row.id === 'local-dsh-default-overrides');
+  const entry = entries.find(row => row.id === 'dsh-default-overrides');
   const standard = entries.find(row => row.id === 'preset-standard');
   assert(entries.find(row => row.id === 'system-prompt').inject?.includes('dshDefaultOverridesReady'), 'the bundle patch must gate the global system-prompt row');
   assert.equal(entries.filter(row => row.id === entry.id).length, 1);

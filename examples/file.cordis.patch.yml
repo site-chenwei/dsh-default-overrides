@@ -1,7 +1,7 @@
 # Legacy file deployment only; do not combine with the installed bundle.
 # Replace the entry URL and executable paths with your actual locations.
 - insert:
-    - id: local-dsh-default-overrides
+    - id: dsh-default-overrides
       name: 'file:///C:/Tools/dsh-default-overrides/scripts/dsh-default-overrides.mjs'
       config:
         shellMode: persistent-bash

@@ -1,7 +1,8 @@
 # Note: bundle owns installation and ready wiring — 见 .agents/notes/implemented/architecture/2026-09-24-distributable-dsh-bundle.md。
-# Keep this id for compatibility with existing file-based profiles.
+# 行 ID 与包名一致，是用户配置层的唯一锚点；改名属破坏性变更，迁移见
+# dsh-default-overrides-migration.md，决定见 .agents/notes/implemented/architecture/2026-10-08-config-row-id-rename.md。
 - insert:
-    - id: local-dsh-default-overrides
+    - id: dsh-default-overrides
       name: dsh-default-overrides
       config: {}
 

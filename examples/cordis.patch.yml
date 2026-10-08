@@ -1,7 +1,7 @@
 # Merge into $DSH_HOME/profiles/<profile>/cordis.patch.yml AFTER bundle installation.
 # This updates the bundle-owned entry; do not insert a second plugin instance.
 # Replace the paths with your actual executables. macOS Bash example: /bin/bash.
-- id: local-dsh-default-overrides
+- id: dsh-default-overrides
   config:
     shellMode: persistent-bash
     # Optional: Windows resolves the first bash.exe on the host PATH; other hosts retain /bin/bash.
