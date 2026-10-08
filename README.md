@@ -196,6 +196,8 @@ Git Bash 和独立 MSYS2 Bash 属于当前接入的 MSYS 家族。**DSH 在 Wind
 dsh plugin --profile web add dsh-default-overrides@版本号
 ```
 
+版本号不只是为了固定：安装走 pnpm，pnpm 从 11 起默认有 24 小时的发布冷却期（`minimumReleaseAge`），刚发布的版本不带版本号时解析不到，会装回更早的版本。
+
 卸载：
 
 ```sh

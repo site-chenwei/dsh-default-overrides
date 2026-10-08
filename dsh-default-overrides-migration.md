@@ -22,6 +22,13 @@
 
 不改名的后果不是启动报错：补丁匹配不到任何行时，DSH 只发出警告并跳过，插件以空配置激活，于是 Shell 选择、工具禁用、人设和框架身份提示全部静默回到默认。**升级后如果发现"包装上了但什么都不生效"，先检查这一行是不是还在用旧 ID。**
 
+**升级时写清版本号。** 安装走 pnpm，而 pnpm 从 11 起默认开启发布冷却期（`minimumReleaseAge`，1440 分钟）：版本发布后 24 小时内不参与解析。所以刚发布时用不带版本号的命令，装回来的其实是更早的版本，行 ID 又变回旧名，配置照样失效。用固定版本安装，并确认实际装的版本：
+
+```sh
+dsh plugin --profile <profile> add dsh-default-overrides@0.5.0
+cat ~/.dsh/profiles/<profile>/node_modules/dsh-default-overrides/package.json | grep '"version"'
+```
+
 同一个 profile 只保留一个 `dsh-default-overrides` 条目，改名后删掉旧的那行。文件部署同样把入口行改名，五个运行模块与配置保持同版本。
 
 ## 升级到 0.4.0
