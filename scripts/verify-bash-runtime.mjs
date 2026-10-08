@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { resolveWindowsBash, createBashProbe, parseBashProbe, verifyWindowsBash, createBashRuntime, BASH_RUNTIME_SERVICE } from './bash-runtime.mjs';
 import { applyWindowsBash } from './gitbash-executor.mjs';
 import * as windowsTerminal from './windows-bash-terminal.mjs';
@@ -74,7 +74,7 @@ export async function verifyBashRuntime(installation, bashPath) {
     if (process.platform !== 'win32') {
       const hostRequire = createRequire(join(installation, 'package.json'));
       const load = name => import(pathToFileURL(hostRequire.resolve(`@deepseek-ai/${name}`)).href);
-      const [{ Context }, { default: Loader }, { Session, SessionId }, scope] = await Promise.all([load('cordis'), load('cordis-plugin-loader'), load('dsh-session'), load('dsh-scope')]);
+      const [{ Context }, { default: Loader, Group }, { Session, SessionId }, scope] = await Promise.all([load('cordis'), load('cordis-plugin-loader'), load('dsh-session'), load('dsh-scope')]);
       for (const persistent of [false, true]) {
         const root = new Context();
         root.baseUrl = pathToFileURL(join(installation, 'package.json')).href;
@@ -107,6 +107,40 @@ export async function verifyBashRuntime(installation, bashPath) {
           }
         } finally { await root.fiber.dispose(); }
       }
+
+      // 适配器行必须能在插件自己的隔离组内工作：非加载器子上下文拿不到隔离域标签。
+      const grouped = new Context();
+      grouped.baseUrl = pathToFileURL(join(installation, 'package.json')).href;
+      try {
+        await grouped.plugin(Loader, { baseUrl: pathToFileURL(join(installation, 'package.json')).href });
+        for (const name of ['dsh-agent', 'dsh-session-projection', 'dsh-subprocess-local']) await grouped.plugin((await load(name)).default);
+        await grouped.plugin((await load('dsh-sandbox-policy')).default, { mode: 'danger-full-access', workspaceRoot: scratch });
+        grouped.loader.builtins.group = Group;
+        const id = SessionId('runtime-probe-grouped');
+        const seed = Session.create(id);
+        const agent = { id, session: Session.create(id, [], { ...seed.header, cwd: scratch }), options: {}, status: 'idle', send() {}, followup() {}, steer() {}, inject() {}, cancel() {}, runMaintenance: task => task(new AbortController().signal), whenIdle: () => Promise.resolve() };
+        agent.ctx = scope.createScope(grouped, agent).ctx;
+        grouped.agents.register(agent);
+        await grouped.loader.root.update([{
+          id: 'local-standard-persistent-shell', name: 'cordis:group', group: true,
+          isolate: { terminals: true, [BASH_RUNTIME_SERVICE]: true },
+          config: [
+            { id: 'pty', name: '@deepseek-ai/dsh-terminal' },
+            { id: 'terminal-shell', name: pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), 'windows-bash-terminal.mjs')).href, config: { shellPath: bashPath, timeoutMs: 10000 } },
+          ],
+        }]);
+        await grouped.loader.await();
+        const entries = [...grouped.loader.entries()];
+        for (const entry of entries) await entry.fiber?.await();
+        const adapterRow = entries.find(entry => entry.id === 'terminal-shell');
+        assert.equal(adapterRow?.fiber.state, 2, 'the adapter row applies inside the isolated shell group');
+        const provided = Object.getOwnPropertySymbols(grouped.reflect.store).map(key => grouped.reflect.store[key]).filter(Boolean);
+        const runtime = provided.find(impl => impl.name === BASH_RUNTIME_SERVICE)?.value;
+        assert.equal(typeof runtime?.inspect, 'function', 'the adapter provides the runtime service inside the group');
+        await assert.rejects(() => runtime.inspect(agent), /compatibility.*MSYS-family Bash only/);
+        const terminals = provided.find(impl => impl.name === 'terminals')?.value;
+        assert.equal(terminals?.list(agent).length, 0, 'the diagnostic PTY is closed after the rejected probe');
+      } finally { await grouped.fiber.dispose(); }
       console.log('PASS: actual one-shot and PTY probes reject unsupported Bash; no user command runs and the rejected PTY exits');
     }
   } finally { rmSync(scratch, { recursive: true, force: true }); }
