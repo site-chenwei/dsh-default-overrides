@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { resolveWindowsBash, createBashProbe, parseBashProbe, verifyWindowsBash, createBashRuntime, BASH_RUNTIME_SERVICE } from './bash-runtime.mjs';
+import { resolveWindowsBash, createBashProbe, parseBashProbe, verifyWindowsBash, createBashRuntime, probeBashTerminal, BASH_RUNTIME_SERVICE } from './bash-runtime.mjs';
 import { applyWindowsBash } from './gitbash-executor.mjs';
 import * as windowsTerminal from './windows-bash-terminal.mjs';
 
@@ -43,6 +43,26 @@ export async function verifyBashRuntime(installation, bashPath) {
     assert.throws(() => verifyWindowsBash('truncated', probe, entry, 'bash', []), /identity.*incomplete/);
     assert.throws(() => verifyWindowsBash(output({ ...msys, windowsPath: 'D:/wrong' }), probe, entry, 'bash', []), /path conversion.*round-trip/);
     assert.throws(() => verifyWindowsBash(output({ ...msys, cygpath: '' }), probe, entry, 'bash', []), /path conversion/);
+
+    // 真实 Windows 上第一批发往 ConPTY 的输入会丢失：整屏只剩启动提示符，必须重发一次而不是直接判定身份失败。
+    const sends = [];
+    const terminalSession = () => ({
+      startSend: () => {
+        sends.push('probe');
+        const delivered = sends.length > 1;
+        return { done: Promise.resolve({ waitReason: 'inferred_idle', sessionStatus: { kind: 'running' }, viewport: delivered ? `${probe.marker} dsh>` : 'dsh>' }) };
+      },
+      read: () => ({ text: sends.length > 1 ? output(msys) : 'dsh>' }),
+    });
+    assert.equal(await probeBashTerminal(terminalSession(), probe), output(msys));
+    assert.equal(sends.length, 2, 'a missing record triggers exactly one resend');
+    const stuckSends = [];
+    const stuck = {
+      startSend: () => { stuckSends.push('probe'); return { done: Promise.resolve({ waitReason: 'inferred_idle', sessionStatus: { kind: 'running' }, viewport: 'dsh>' }) }; },
+      read: () => ({ text: 'dsh>' }),
+    };
+    await assert.rejects(() => probeBashTerminal(stuck, probe), /record is missing after resend \(waitReason=inferred_idle\).*dsh>/);
+    assert.equal(stuckSends.length, 2, 'a repeated miss reports instead of resending forever');
 
     const cleanups = [];
     const ctx = { effect: setup => cleanups.push(setup()) };
