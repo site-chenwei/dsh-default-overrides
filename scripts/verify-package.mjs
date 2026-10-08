@@ -74,6 +74,12 @@ try {
     assert(preset, `the shipped web profile must declare ${id}`);
     assert(preset.inject?.includes('dshDefaultOverridesReady'), `the bundle patch must gate ${id}`);
   }
+  // Web 表层段由该行按 surfaceContext 注册。覆盖 inject 时丢掉原有的 webStartup，会让 launcher 参数的 !!js 表达式全部求值失败。
+  const webRuntime = entries.find(row => row.id === 'web-runtime');
+  assert(webRuntime, 'the shipped web profile must declare web-runtime');
+  for (const dependency of ['webStartup', 'dshDefaultOverridesReady']) {
+    assert(webRuntime.inject?.includes(dependency), `the bundle patch must keep ${dependency} on web-runtime`);
+  }
 
   const [{ Context }, { default: Loader, Group }] = await Promise.all([load('cordis'), load('cordis-plugin-loader')]);
   const root = new Context();
@@ -116,6 +122,10 @@ try {
   const fileEntries = boot.composeEntries([
     ...profile.layers.filter(layer => layer.packageName !== manifest.name).map(layer => layer.patches), filePatches,
   ], message => { throw new Error(message); });
+  const fileWebRuntime = fileEntries.find(row => row.id === 'web-runtime');
+  for (const dependency of ['webStartup', 'dshDefaultOverridesReady']) {
+    assert(fileWebRuntime?.inject?.includes(dependency), `the file deployment example must keep ${dependency} on web-runtime`);
+  }
   const fileRoot = new Context();
   const filePresets = [];
   try {

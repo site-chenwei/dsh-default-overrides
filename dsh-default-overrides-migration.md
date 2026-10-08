@@ -89,7 +89,7 @@ disabledTools:
 
 按照 [文件部署示例](examples/file.cordis.patch.yml)修改实际入口 URL 和可执行文件路径，然后合并到 profile 配置。直接引用本仓库时，入口在 `scripts/` 目录。
 
-示例同时配置了内置预设和系统提示词的 `dshDefaultOverridesReady` 等待项。保留这些条目及已有的其他 `inject` 依赖，不要把等待项加到 `agent-preset-registry` 上。
+示例同时配置了内置预设、全局系统提示词和 Web 运行行的 `dshDefaultOverridesReady` 等待项。保留这些条目及已有的其他 `inject` 依赖（`web-runtime` 行还必须保留 `webStartup`），不要把等待项加到 `agent-preset-registry` 上。
 
 完整重启后新建 `standard` 会话检查。文件 URL、五个模块文件和配置应始终属于同一版本。
 
@@ -108,7 +108,7 @@ Shell 选择和工具禁用仍只影响 `standard`。将自建预设加入 `pers
 
 该示例只展示需要加入的等待项，请与原列表合并。内置的 `standard`、`ptc`、`cordis`、`minimal` 已由插件包配置好。
 
-如果用户配置覆盖了内置预设或全局 `system-prompt` 的 `inject`，也要保留该等待项。自定义 profile 中，本插件包应位于提供 `standard` 预设的包之后；使用内置 `web` profile 时，正常安装会自动追加。
+如果用户配置覆盖了内置预设、全局 `system-prompt` 或 `web-runtime` 行的 `inject`，也要保留该等待项；`web-runtime` 行原有的 `webStartup` 同样必须保留，它承载 launcher 的 host、port、浏览器与可信主机参数。自定义 profile 中，本插件包应位于提供 `standard` 预设的包之后；使用内置 `web` profile 时，正常安装会自动追加。
 
 ## 旧配置对照
 
@@ -132,7 +132,7 @@ Shell 选择和工具禁用仍只影响 `standard`。将自建预设加入 `pers
 1. `standard` 使用预期的 Bash 或 PowerShell。
 2. 分两次调用设置并读取目录或变量：持久化模式保留，一次性模式重置。
 3. 配置的人设应用到名单中的预设，未选中的预设保持原样。
-4. 工具禁用、框架身份提示与其他原有配置符合预期。
+4. 工具禁用、框架身份提示、Web 表层提示与其他原有配置符合预期。
 
 出现问题时，先记录 DSH / Node 版本、操作系统、模式和完整错误，再按 [常见问题](README.md#常见问题)排查。
 

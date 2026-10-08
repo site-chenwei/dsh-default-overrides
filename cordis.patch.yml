@@ -32,3 +32,12 @@
 - id: system-prompt
   inject:
     - dshDefaultOverridesReady
+
+# Note: harness:source 与 app:web-surface 由 web-runtime 行（dsh-web-app bundle）按 surfaceContext 注册，
+# 该行必须先等到本插件就绪。webStartup 是它原有的依赖，覆盖 inject 时必须保留，
+# 否则 launcher 参数（host/port/openBrowser/trustedHosts）的 !!js 表达式全部求值失败
+# — 见 .agents/notes/implemented/feature/2026-10-08-configurable-surface-context.md。
+- id: web-runtime
+  inject:
+    - webStartup
+    - dshDefaultOverridesReady

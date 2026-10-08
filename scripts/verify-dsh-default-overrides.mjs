@@ -111,7 +111,22 @@ async function runtime(config, options = {}) {
     if (options.personaConfig !== undefined) {
       declaration.config.plugins.find(row => row.id === 'persona').config = { ...options.personaConfig };
     }
-    await root.loader.root.update([{ id: 'system-prompt', name: '@deepseek-ai/dsh-system-prompt', config: { personaPrefix: '' }, inject: ['dshDefaultOverridesReady'] }, declaration, overrideRow(config)]);
+    const rows = [{ id: 'system-prompt', name: '@deepseek-ai/dsh-system-prompt', config: { personaPrefix: '' }, inject: ['dshDefaultOverridesReady'] }, declaration, overrideRow(config)];
+    // Web 表层段（harness:source / app:web-surface）由 web-runtime 行注册，该行按真实 bundle 的顺序先单独挂一次：
+    // 不等 ready 的行会在这一步把配置解析完，之后本插件的钩子再注册也来不及。第二次 update 是整体替换，必须带上该行。
+    if (options.webRuntime !== undefined) {
+      root.provide('webServer', { host: '127.0.0.1', port: 3080 });
+      const webRow = {
+        id: 'web-runtime',
+        name: '@deepseek-ai/dsh-web-app',
+        ...(options.webRuntime.ready === false ? {} : { inject: ['dshDefaultOverridesReady'] }),
+        config: { openBrowser: false, printUrl: false, surfaceContext: true, trustedHosts: [] },
+      };
+      await root.loader.root.update([webRow]);
+      await root.loader.await();
+      rows.unshift(webRow);
+    }
+    await root.loader.root.update(rows);
     await settle(root);
     const id = SessionId(`shell-verify-${presetId}-${config.shellMode ?? 'none'}`);
     const seed = Session.create(id);
@@ -166,6 +181,7 @@ try {
     [{ persona: { prefix: 42 } }, /persona\.prefix must be a string/],
     [{ persona: { complete: 'yes' } }, /persona\.complete must be a boolean/],
     [{ includeHarnessIdentity: 'no' }, /includeHarnessIdentity must be a boolean/],
+    [{ surfaceContext: 'no' }, /surfaceContext must be a boolean/],
     [{ envContext: 'yes' }, /envContext must be a boolean/],
     [{ shellMode: 'bash', bashPath, normalizeWindowsPaths: 'yes' }, /normalizeWindowsPaths must be a boolean/],
   ]) await assert.rejects(() => registeredPreset(config), pattern);
@@ -563,6 +579,30 @@ try {
     assert.match(assembly.tools.find(tool => tool.name === 'bash').description, /Do not invoke/, 'tool guidance must survive hiding the harness identity');
   } finally { await hiddenIdentity.dispose(); }
   console.log('PASS: includeHarnessIdentity false drops only the harness identity section');
+
+  // Web 表层两段由 web-runtime 行按官方 surfaceContext 注册：本插件只改该行的开关，两段一起消失，其他段落不受影响。
+  const WEB_SECTIONS = ['harness:source', 'app:web-surface'];
+  const webSections = assembly => assembly.sections.filter(section => WEB_SECTIONS.includes(section.name)).map(section => section.name);
+  const otherSections = assembly => assembly.sections.map(section => section.name).filter(name => !WEB_SECTIONS.includes(name));
+  const webShown = await runtime({ disabledTools: OFFICIAL_FREE, envContext: true, surfaceContext: true }, { webRuntime: {} });
+  let shownSections;
+  try {
+    const assembly = await webShown.assemble();
+    assert.deepEqual(webSections(assembly), WEB_SECTIONS, 'surfaceContext true 时两段都必须存在');
+    shownSections = otherSections(assembly);
+  } finally { await webShown.dispose(); }
+  const webHidden = await runtime({ disabledTools: OFFICIAL_FREE, envContext: true, surfaceContext: false }, { webRuntime: {} });
+  try {
+    const assembly = await webHidden.assemble();
+    assert.deepEqual(webSections(assembly), [], 'surfaceContext false 必须同时去掉两段');
+    assert.deepEqual(otherSections(assembly), shownSections, '关闭 Web 表层不得影响其他段落');
+    assert(assembly.contexts.some(section => section.name === 'local:dsh-default-overrides:environment'), '环境事实段与 Web 表层开关无关');
+  } finally { await webHidden.dispose(); }
+  const webUngated = await runtime({ disabledTools: OFFICIAL_FREE, surfaceContext: false }, { webRuntime: { ready: false } });
+  try {
+    assert.deepEqual(webSections(await webUngated.assemble()), WEB_SECTIONS, '不等 ready 的 web-runtime 行拿不到配置改写');
+  } finally { await webUngated.dispose(); }
+  console.log('PASS: surfaceContext false drops only the two Web surface sections, and the ready gate is load-bearing');
 
   const RAW_PATH_COMMAND = String.raw`printf '%s\n' C:\Users\chenwei\docs`;
   const QUOTED_PATH_COMMAND = String.raw`printf '%s\n' 'C:\Program Files\Git' "D:\My Documents\file"`;

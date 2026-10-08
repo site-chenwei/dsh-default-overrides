@@ -23,8 +23,11 @@
       prefix: 'You are a helpful software engineer assistant.'
     # Hide the global harness:identity section for the whole profile.
     includeHarnessIdentity: false
+    # Hide the Web surface prompts (harness:source, app:web-surface) and DSH_WEB_URL.
+    surfaceContext: false
     # Optional compatibility rewrite; environment detection does not require it.
     normalizeWindowsPaths: false
 
 # The bundle supplies preset-standard.inject. If another patch overrides inject,
 # retain dshDefaultOverridesReady alongside that patch's other dependencies.
+# The same applies to the web-runtime row: keep its webStartup dependency.

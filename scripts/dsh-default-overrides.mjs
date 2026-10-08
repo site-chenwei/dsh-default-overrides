@@ -176,6 +176,10 @@ export async function apply(ctx, options = {}) {
   if (includeHarnessIdentity !== undefined && typeof includeHarnessIdentity !== 'boolean') {
     throw new Error('dsh-default-overrides: includeHarnessIdentity must be a boolean');
   }
+  const surfaceContext = options.surfaceContext;
+  if (surfaceContext !== undefined && typeof surfaceContext !== 'boolean') {
+    throw new Error('dsh-default-overrides: surfaceContext must be a boolean');
+  }
   const persistent = shellEnabled && mode.startsWith('persistent-');
   const dialect = mode === 'bash' || mode === 'persistent-bash' ? 'bash' : 'pwsh';
   const pathKey = dialect === 'bash' ? 'bashPath' : 'pwshPath';
@@ -209,6 +213,13 @@ export async function apply(ctx, options = {}) {
     ctx.loader.import('@deepseek-ai/cordis-plugin-include'),
     ctx.loader.import('@deepseek-ai/dsh-system-prompt'),
   ]);
+  // Note: 只有明确配置 surfaceContext 时才解析 web-app，未配置的 profile（含没有 web bundle 的 headless）不引入这条依赖
+  // — 见 .agents/notes/implemented/feature/2026-10-08-configurable-surface-context.md。
+  const webApp = surfaceContext === undefined ? undefined : await ctx.loader.import('@deepseek-ai/dsh-web-app').catch(() => undefined);
+  const applyWebApp = webApp?.apply;
+  if (surfaceContext !== undefined && applyWebApp === undefined) {
+    ctx.logger.warn('dsh-default-overrides: surfaceContext is configured but @deepseek-ai/dsh-web-app is unavailable in this profile; nothing registers the harness:source and app:web-surface sections here');
+  }
   const patched = new WeakMap();
   // 只记录确实替换过 Shell 行的预设；persona 和工具禁用不声明通道所有权。
   const configuredShellPresets = new Set();
@@ -288,6 +299,11 @@ export async function apply(ctx, options = {}) {
     // Note: harness:identity 由全局 system-prompt 行注册，这里只改它的官方开关 — 见 .agents/notes/implemented/feature/2026-09-24-configurable-harness-identity.md。
     if (this.runtime?.callback === SystemPrompt) {
       return includeHarnessIdentity === undefined ? config : { ...config, includeHarnessIdentity };
+    }
+    // Note: harness:source 与 app:web-surface 都由 web-runtime 行的 surfaceContext 决定，这里只改它的官方开关
+    // — 见 .agents/notes/implemented/feature/2026-10-08-configurable-surface-context.md。
+    if (applyWebApp !== undefined && this.runtime?.callback === applyWebApp) {
+      return surfaceContext === undefined ? config : { ...config, surfaceContext };
     }
     // 行补丁分两类：Shell 与工具行仍只作用于官方 standard 预设：它是本插件声明兼容的结构基线（persona 行、tool-bash/tool-pwsh 行、行 ID 清单都在那里）。
     if (this.runtime?.callback !== AgentPreset) return config;

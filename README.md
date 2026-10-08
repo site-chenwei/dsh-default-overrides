@@ -139,10 +139,13 @@ Bash 与 PowerShell 的路径可以同时保存；切换时只修改 `shellMode`
 - id: dsh-default-overrides
   config:
     includeHarnessIdentity: false
+    surfaceContext: false
     envContext: true
 ```
 
 `includeHarnessIdentity: false` 隐藏 DSH 提供的框架身份提示句，影响整个 profile；不会更换所用模型或 API。
+
+`surfaceContext: false` 关闭 Web 表层提示：系统提示词里不再出现 DSH 实现源码 checkout 的路径说明和 Web GUI 的定位说明，shell 命令也不再收到 `DSH_WEB_URL`。它只影响这两段文本和这个变量，不影响 Web 界面本身的启动、URL 打印或浏览器打开；没有 Web 界面的 profile（例如 headless）本来就没有这两段。
 
 `envContext: true` 向模型补充平台和工作区信息。只有本插件实际配置过 Shell 的预设，才附带对应 Shell 说明。设为 `false` 会关闭这段环境说明，Shell 工具自身的操作提示仍然保留。
 
@@ -158,6 +161,7 @@ Bash 与 PowerShell 的路径可以同时保存；切换时只修改 `shellMode`
 | `persona` | 未设置 | 不设置时保留原有人设 |
 | `personaPresets` | `['standard']` | 接受人设覆盖的预设名单；仅在配置 `persona` 时生效 |
 | `includeHarnessIdentity` | 未设置 | 保留 DSH 当前设置；`false` 隐藏框架身份提示句 |
+| `surfaceContext` | 未设置 | 保留 DSH 当前设置；`false` 关闭 Web 表层提示段与 `DSH_WEB_URL` |
 | `envContext` | 选择 Shell 时开启，否则关闭 | 可显式开启或关闭环境说明 |
 | `normalizeWindowsPaths` | `false` | 可选的 Bash 路径改写辅助，见下文 |
 
@@ -184,6 +188,7 @@ Git Bash 和独立 MSYS2 Bash 属于当前接入的 MSYS 家族。**DSH 在 Wind
 | 环境检查超时 | 检查 Bash 启动配置中是否有耗时操作或等待输入的命令 |
 | 连续调用没有保留目录或变量 | 改用 `persistent-bash` / `persistent-pwsh`，并确认终端没有退出或被重置 |
 | 人设没有生效 | 检查当前预设是否在 `personaPresets` 中；自建预设还需完成高级配置中的等待依赖设置 |
+| 系统提示词里仍有 checkout 路径或 GUI 说明 | 用 `surfaceContext: false` 关闭；固定开场白 `You are an AI agent powered by DeepSeek Harness.` 由 `includeHarnessIdentity` 控制 |
 | 禁用工具时报 ID 不存在 | 按当前 DSH 版本核对配置 ID，或先删除该项恢复启动 |
 
 反馈问题时，请提供 DSH / Node 版本、操作系统、所选模式及错误文本。
