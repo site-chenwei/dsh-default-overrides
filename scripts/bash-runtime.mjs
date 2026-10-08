@@ -106,22 +106,6 @@ export async function withBashProbeDeadline(signal, operation) {
   finally { clearTimeout(timer); }
 }
 
-/** 读取后端的真实终端，保留官方的 prompt、发送和滚动输出协议。 */
-export async function probeBashTerminal(session, probe, signal) {
-  let last;
-  // ConPTY 会丢弃进程启动后到达的第一批输入：整屏只剩启动提示符时，命令没有执行过也没有回显，重发一次即可。
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    const result = await session.startSend({ text: probe.command, submit: true, signal }).done;
-    signal?.throwIfAborted();
-    if (result.sessionStatus.kind === 'exited' || result.waitReason === 'timeout') {
-      throw new Error(`Bash probe ended with ${result.waitReason}: ${result.viewport}`);
-    }
-    last = { result, text: session.read({ offset: 0, count: 100 }).text };
-    if (last.text.includes(probe.marker)) return last.text;
-  }
-  throw new Error(`Bash probe record is missing after resend (waitReason=${last.result.waitReason}); viewport=${JSON.stringify(last.result.viewport.slice(-2048))}; scrollback=${JSON.stringify(last.text.slice(-2048))}`);
-}
-
 export function bashRuntimeDescription(facts) {
   return `Verified Bash environment: MSYS (${facts.system}), Bash ${facts.version}. Entry: ${JSON.stringify(facts.executable)} from ${facts.source}. Startup arguments: ${JSON.stringify(facts.startupArgs)}. cygpath conversion was verified.`;
 }

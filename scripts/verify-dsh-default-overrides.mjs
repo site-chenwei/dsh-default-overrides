@@ -226,7 +226,13 @@ try {
     const persistent = mode.startsWith('persistent-');
     const dialect = mode.includes('bash') ? 'bash' : 'pwsh';
     const selectedPath = dialect === 'bash' ? bashPath : pwshPath;
-    assert.deepEqual(group.isolate, { ...(persistent ? { terminals: true } : { shell: true }), ...(onWindows && dialect === 'bash' ? { [BASH_RUNTIME_SERVICE]: true } : {}) });
+    const windowsBash = onWindows && dialect === 'bash';
+    assert.deepEqual(group.isolate, {
+      ...(persistent ? { terminals: true } : { shell: true }),
+      ...(windowsBash ? { [BASH_RUNTIME_SERVICE]: true } : {}),
+      ...(windowsBash && persistent ? { shell: true } : {}),
+    });
+    if (windowsBash && persistent) assert.equal(group.config.find(row => row.id === 'bash-probe')?.name, '@deepseek-ai/dsh-bash-local', 'the probe executor is mounted beside the PTY row');
     assert.equal(rows.filter(row => row.id === GROUP_ID).length, 1);
     for (const id of ['tool-bash', 'tool-pwsh', 'tool-web', 'tool-workflow']) assert.equal(rows.find(row => row.id === id).disabled, true);
     const backend = group.config.find(row => row.id === (persistent ? 'terminal-shell' : dialect === 'bash' ? 'gitbash-executor' : 'pwsh-executor'));

@@ -2,7 +2,7 @@ import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BASH_RUNTIME_SERVICE, bashRuntimeDescription, bashPathGuidance } from './bash-runtime.mjs';
+import { BASH_RUNTIME_SERVICE, BASH_PROBE_TIMEOUT_MS, bashRuntimeDescription, bashPathGuidance } from './bash-runtime.mjs';
 
 // Note: 包根导出与 bundle 共用此入口，安装接线由补丁提供 — 见 .agents/notes/implemented/architecture/2026-09-24-distributable-dsh-bundle.md。
 export const name = 'dsh-default-overrides';
@@ -220,6 +220,8 @@ export async function apply(ctx, options = {}) {
     if (rewritePaths && persistent) shimPath ??= writeBashShim();
     const backendRows = persistent ? [
       { id: 'pty', name: '@deepseek-ai/dsh-terminal' },
+      // Windows 的环境事实由官方一次性执行器经管道取得，不写 PTY —— 见 .agents/notes/implemented/feature/2026-10-08-pipe-bash-probe.md。
+      ...(windowsBash ? [{ id: 'bash-probe', name: '@deepseek-ai/dsh-bash-local', config: { timeoutMs: BASH_PROBE_TIMEOUT_MS } }] : []),
       {
         id: 'terminal-shell',
         name: windowsBash ? new URL('./windows-bash-terminal.mjs', import.meta.url).href : '@deepseek-ai/dsh-terminal-bash',
@@ -245,7 +247,11 @@ export async function apply(ctx, options = {}) {
         id: SHELL_GROUP_ID,
         name: 'cordis:group',
         group: true,
-        isolate: { ...(persistent ? { terminals: true } : { shell: true }), ...(windowsBash ? { [BASH_RUNTIME_SERVICE]: true } : {}) },
+        isolate: {
+          ...(persistent ? { terminals: true } : { shell: true }),
+          ...(windowsBash ? { [BASH_RUNTIME_SERVICE]: true } : {}),
+          ...(windowsBash && persistent ? { shell: true } : {}),
+        },
         config: [
           ...backendRows,
           {

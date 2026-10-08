@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { resolveWindowsBash, createBashProbe, parseBashProbe, verifyWindowsBash, createBashRuntime, probeBashTerminal, BASH_RUNTIME_SERVICE } from './bash-runtime.mjs';
+import { resolveWindowsBash, createBashProbe, parseBashProbe, verifyWindowsBash, createBashRuntime, BASH_PROBE_TIMEOUT_MS, BASH_RUNTIME_SERVICE } from './bash-runtime.mjs';
 import { applyWindowsBash } from './gitbash-executor.mjs';
 import * as windowsTerminal from './windows-bash-terminal.mjs';
 
@@ -44,26 +44,6 @@ export async function verifyBashRuntime(installation, bashPath) {
     assert.throws(() => verifyWindowsBash(output({ ...msys, windowsPath: 'D:/wrong' }), probe, entry, 'bash', []), /path conversion.*round-trip/);
     assert.throws(() => verifyWindowsBash(output({ ...msys, cygpath: '' }), probe, entry, 'bash', []), /path conversion/);
 
-    // 真实 Windows 上第一批发往 ConPTY 的输入会丢失：整屏只剩启动提示符，必须重发一次而不是直接判定身份失败。
-    const sends = [];
-    const terminalSession = () => ({
-      startSend: () => {
-        sends.push('probe');
-        const delivered = sends.length > 1;
-        return { done: Promise.resolve({ waitReason: 'inferred_idle', sessionStatus: { kind: 'running' }, viewport: delivered ? `${probe.marker} dsh>` : 'dsh>' }) };
-      },
-      read: () => ({ text: sends.length > 1 ? output(msys) : 'dsh>' }),
-    });
-    assert.equal(await probeBashTerminal(terminalSession(), probe), output(msys));
-    assert.equal(sends.length, 2, 'a missing record triggers exactly one resend');
-    const stuckSends = [];
-    const stuck = {
-      startSend: () => { stuckSends.push('probe'); return { done: Promise.resolve({ waitReason: 'inferred_idle', sessionStatus: { kind: 'running' }, viewport: 'dsh>' }) }; },
-      read: () => ({ text: 'dsh>' }),
-    };
-    await assert.rejects(() => probeBashTerminal(stuck, probe), /record is missing after resend \(waitReason=inferred_idle\).*dsh>/);
-    assert.equal(stuckSends.length, 2, 'a repeated miss reports instead of resending forever');
-
     const cleanups = [];
     const ctx = { effect: setup => cleanups.push(setup()) };
     let calls = 0;
@@ -102,7 +82,10 @@ export async function verifyBashRuntime(installation, bashPath) {
           await root.plugin(Loader, { baseUrl: pathToFileURL(join(installation, 'package.json')).href });
           for (const name of ['dsh-agent', 'dsh-session-projection', 'dsh-subprocess-local']) await root.plugin((await load(name)).default);
           await root.plugin((await load('dsh-sandbox-policy')).default, { mode: 'danger-full-access', workspaceRoot: scratch });
-          if (persistent) await root.plugin((await load('dsh-terminal')).default);
+          if (persistent) {
+            await root.plugin((await load('dsh-terminal')).default);
+            await root.plugin((await load('dsh-bash-local')).default, { timeoutMs: BASH_PROBE_TIMEOUT_MS });
+          }
           const id = SessionId(`runtime-probe-${persistent}`);
           const seed = Session.create(id);
           const agent = { id, session: Session.create(id, [], { ...seed.header, cwd: scratch }), options: {}, status: 'idle', send() {}, followup() {}, steer() {}, inject() {}, cancel() {}, runMaintenance: task => task(new AbortController().signal), whenIdle: () => Promise.resolve() };
@@ -122,8 +105,7 @@ export async function verifyBashRuntime(installation, bashPath) {
           await assert.rejects(() => root.get(BASH_RUNTIME_SERVICE).inspect(agent), /compatibility.*MSYS-family Bash only/);
           if (persistent) {
             assert.equal(root.terminals.list(agent).length, 0);
-            assert.equal(handles.length, 1);
-            await handles[0].done;
+            assert.equal(handles.length, 0, '不兼容入口在环境探测阶段就结束，不创建 PTY');
           }
         } finally { await root.fiber.dispose(); }
       }
@@ -143,9 +125,10 @@ export async function verifyBashRuntime(installation, bashPath) {
         grouped.agents.register(agent);
         await grouped.loader.root.update([{
           id: 'local-standard-persistent-shell', name: 'cordis:group', group: true,
-          isolate: { terminals: true, [BASH_RUNTIME_SERVICE]: true },
+          isolate: { terminals: true, shell: true, [BASH_RUNTIME_SERVICE]: true },
           config: [
             { id: 'pty', name: '@deepseek-ai/dsh-terminal' },
+            { id: 'bash-probe', name: '@deepseek-ai/dsh-bash-local', config: { timeoutMs: BASH_PROBE_TIMEOUT_MS } },
             { id: 'terminal-shell', name: pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), 'windows-bash-terminal.mjs')).href, config: { shellPath: bashPath, timeoutMs: 10000 } },
           ],
         }]);
@@ -159,9 +142,9 @@ export async function verifyBashRuntime(installation, bashPath) {
         assert.equal(typeof runtime?.inspect, 'function', 'the adapter provides the runtime service inside the group');
         await assert.rejects(() => runtime.inspect(agent), /compatibility.*MSYS-family Bash only/);
         const terminals = provided.find(impl => impl.name === 'terminals')?.value;
-        assert.equal(terminals?.list(agent).length, 0, 'the diagnostic PTY is closed after the rejected probe');
+        assert.equal(terminals?.list(agent).length, 0, 'the rejected pipe probe never starts a PTY');
       } finally { await grouped.fiber.dispose(); }
-      console.log('PASS: actual one-shot and PTY probes reject unsupported Bash; no user command runs and the rejected PTY exits');
+      console.log('PASS: actual one-shot and pipe probes reject unsupported Bash; no user command runs and no PTY is created');
     }
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 }
