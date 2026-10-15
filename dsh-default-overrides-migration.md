@@ -97,6 +97,8 @@ disabledTools:
 
 Shell 选择和工具禁用仍只影响 `standard`。将自建预设加入 `personaPresets`，只会让它接收人设配置。
 
+`autoCompaction` 是例外：它作用于任何自带 `compaction-basic` 行的预设，不需要名单，也不需要自建预设做额外配置。自建预设若删掉了该行，插件会原样放行。
+
 名单填写预设标识（预设配置中的 `id`）；对应预设条目的 `inject` 还需要包含 `dshDefaultOverridesReady`。例如条目 ID 为 `preset-my-assistant` 时：
 
 ```yaml

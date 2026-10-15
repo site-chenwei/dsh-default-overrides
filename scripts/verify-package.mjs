@@ -54,7 +54,7 @@ try {
 
   // Exercise the documented user layer, then inspect the real DSH composition.
   writeFileSync(join(profileDir, 'cordis.patch.yml'), JSON.stringify([
-    { id: 'dsh-default-overrides', config: { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], persona: { prefix: 'You are a helpful software engineer assistant.' } } },
+    { id: 'dsh-default-overrides', config: { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], autoCompaction: false, persona: { prefix: 'You are a helpful software engineer assistant.' } } },
   ]));
   const profile = boot.loadProfileDirectory('dsh', profileDir, installAnchor);
   assert(profile.layers.some(layer => layer.packageName === manifest.name), 'bundle passes host compatibility and patch loading');
@@ -66,7 +66,7 @@ try {
   assert(entries.find(row => row.id === 'system-prompt').inject?.includes('dshDefaultOverridesReady'), 'the bundle patch must gate the global system-prompt row');
   assert.equal(entries.filter(row => row.id === entry.id).length, 1);
   assert.equal(entry.name, manifest.name);
-  assert.deepEqual(entry.config, { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], persona: { prefix: 'You are a helpful software engineer assistant.' } });
+  assert.deepEqual(entry.config, { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], autoCompaction: false, persona: { prefix: 'You are a helpful software engineer assistant.' } });
   assert(standard.inject.includes('dshDefaultOverridesReady'));
   // 每个可能被 persona 行补丁命中的预设行都必须等到本插件就绪：缺一条 inject，那个预设就静默拿不到人设。
   for (const id of ['preset-standard', 'preset-ptc', 'preset-cordis', 'preset-minimal']) {
@@ -101,6 +101,9 @@ try {
     assert.equal(rows.find(row => row.id === 'persona').config.prefix, 'You are a helpful software engineer assistant.');
     const shell = rows.find(row => row.id === 'local-standard-persistent-shell');
     assert.equal(shell.config[0].config.shellPath, bashPath);
+    // 自动压缩行嵌在预设的 compaction 组里，整包安装后也必须被改写。
+    const compaction = rows.find(row => row.id === 'compaction').config.find(row => row.id === 'compaction-basic');
+    assert.deepEqual(compaction.config, { auto: false });
     assert.equal((await root.loader.import(shell.config[0].name)).name, 'gitbash-executor');
   } finally {
     await root.fiber.dispose();

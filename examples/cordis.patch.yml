@@ -25,6 +25,8 @@
     includeHarnessIdentity: false
     # Hide the Web surface prompts (harness:source, app:web-surface) and DSH_WEB_URL.
     surfaceContext: false
+    # Disable native automatic compaction in every preset that ships a compaction-basic row.
+    autoCompaction: false
     # Optional compatibility rewrite; environment detection does not require it.
     normalizeWindowsPaths: false
 

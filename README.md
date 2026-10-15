@@ -149,6 +149,21 @@ Bash 与 PowerShell 的路径可以同时保存；切换时只修改 `shellMode`
 
 `envContext: true` 向模型补充平台和工作区信息。只有本插件实际配置过 Shell 的预设，才附带对应 Shell 说明。设为 `false` 会关闭这段环境说明，Shell 工具自身的操作提示仍然保留。
 
+### 关闭原生自动压缩
+
+```yaml
+- id: dsh-default-overrides
+  config:
+    autoCompaction: false
+```
+
+DSH 默认会在上下文接近上限时自动压缩历史。`autoCompaction: false` 关闭这个自动流程，上下文不再被自动改写，压缩时机完全由你控制。
+
+- 只影响 `standard`、`ptc`、`cordis`、`minimal` 以及任何自带 `compaction-basic` 行的预设；没有这一行的预设原样保留。不需要像人设那样填写名单。
+- 手动压缩不受影响：会话里执行 `/compact` 仍然可用，ACP 客户端的压缩行为也不变。
+- **风险**：关闭后长会话不会再自动腾出空间，超出上下文上限时会直接报错，需要你自己及时执行 `/compact` 或开新会话。只建议在需要精确控制上下文内容的场景下使用。
+- 省略该项即保留 DSH 原有行为；写 `true` 与省略等效，用于显式表达意图。
+
 ## 配置速查
 
 | 选项 | 默认值 | 说明 |
@@ -163,6 +178,7 @@ Bash 与 PowerShell 的路径可以同时保存；切换时只修改 `shellMode`
 | `includeHarnessIdentity` | 未设置 | 保留 DSH 当前设置；`false` 隐藏框架身份提示句 |
 | `surfaceContext` | 未设置 | 保留 DSH 当前设置；`false` 关闭 Web 表层提示段与 `DSH_WEB_URL` |
 | `envContext` | 选择 Shell 时开启，否则关闭 | 可显式开启或关闭环境说明 |
+| `autoCompaction` | 未设置 | 保留 DSH 当前设置；`false` 关闭原生自动压缩 |
 | `normalizeWindowsPaths` | `false` | 可选的 Bash 路径改写辅助，见下文 |
 
 只有适用的配置参与校验。例如 PowerShell 模式会忽略 `normalizeWindowsPaths`；没有由插件配置 Shell 时，`timeoutMs` 不参与执行。一次性命令等待超时可能转入后台，并不等于进程已终止，请以工具返回结果为准。
@@ -190,6 +206,7 @@ Git Bash 和独立 MSYS2 Bash 属于当前接入的 MSYS 家族。**DSH 在 Wind
 | 人设没有生效 | 检查当前预设是否在 `personaPresets` 中；自建预设还需完成高级配置中的等待依赖设置 |
 | 系统提示词里仍有 checkout 路径或 GUI 说明 | 用 `surfaceContext: false` 关闭；固定开场白 `You are an AI agent powered by DeepSeek Harness.` 由 `includeHarnessIdentity` 控制 |
 | 禁用工具时报 ID 不存在 | 按当前 DSH 版本核对配置 ID，或先删除该项恢复启动 |
+| 长会话中途报上下文超限 | 若设置过 `autoCompaction: false`，改回省略该项，或手动执行 `/compact` |
 
 反馈问题时，请提供 DSH / Node 版本、操作系统、所选模式及错误文本。
 

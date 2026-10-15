@@ -183,6 +183,7 @@ try {
     [{ includeHarnessIdentity: 'no' }, /includeHarnessIdentity must be a boolean/],
     [{ surfaceContext: 'no' }, /surfaceContext must be a boolean/],
     [{ envContext: 'yes' }, /envContext must be a boolean/],
+    [{ autoCompaction: 'no' }, /autoCompaction must be a boolean/],
     [{ shellMode: 'bash', bashPath, normalizeWindowsPaths: 'yes' }, /normalizeWindowsPaths must be a boolean/],
   ]) await assert.rejects(() => registeredPreset(config), pattern);
 
@@ -291,6 +292,26 @@ try {
   // 上游预设缺少 persona 行时必须报错，而不是静默跳过。
   await assert.rejects(() => registeredPreset({ persona: { prefix: PERSONA } }, sparse), /review preset compatibility/);
   await registeredPreset({ shellMode: 'bash', bashPath }, sparse);
+
+  // 自动压缩开关只改预设内 compaction-basic 行的官方 auto 键：同组其他行、整棵其余条目树都必须逐字段不变。
+  const shippedGroup = standard.config.plugins.find(row => row.id === 'compaction');
+  const compactionRow = config => flatten(config.plugins).find(row => row.id === 'compaction-basic');
+  assert.equal(shippedGroup.config.find(row => row.id === 'compaction-basic').config, undefined, '上游预设的 compaction-basic 行默认不带 config');
+  const autoOff = await registeredPreset({ autoCompaction: false });
+  assert.deepEqual(compactionRow(autoOff).config, { auto: false });
+  const autoGroup = autoOff.plugins.find(row => row.id === 'compaction');
+  assert.deepEqual(autoGroup.config.filter(row => row.id !== 'compaction-basic'), shippedGroup.config.filter(row => row.id !== 'compaction-basic'));
+  assert.deepEqual(autoOff.plugins.filter(row => row.id !== 'compaction'), standard.config.plugins.filter(row => row.id !== 'compaction'));
+  assert.deepEqual(compactionRow(await registeredPreset({ autoCompaction: true })).config, { auto: true });
+  // 开关不限于 standard：真实 minimal 预设与自建预设同样生效，缺该行的预设原样放行。
+  assert.deepEqual(compactionRow(await registeredPreset({ autoCompaction: false }, minimal)).config, { auto: false });
+  assert.deepEqual(compactionRow(await registeredPreset({ autoCompaction: false }, custom)).config, { auto: false });
+  assert.deepEqual(await registeredPreset({ autoCompaction: false }, sparse), sparse.config, '缺少该行的预设必须原样放行');
+  // 上游把该行改名时必须报错，而不是静默不生效。
+  const renamed = structuredClone(standard);
+  renamed.config.plugins.find(row => row.id === 'compaction').config.find(row => row.id === 'compaction-basic').name = '@deepseek-ai/dsh-compaction-other';
+  await assert.rejects(() => registeredPreset({ autoCompaction: false }, renamed), /review compaction compatibility/);
+  console.log('PASS: auto compaction switch rewrites only the shipped compaction row and skips presets without it');
   await registeredPreset({ shellMode: 'persistent-bash', bashPath, pwshPath }, standard, async (root, received) => {
     await root.loader.update('dsh-default-overrides', { config: { shellMode: 'pwsh', bashPath, pwshPath } });
     await settle(root);
