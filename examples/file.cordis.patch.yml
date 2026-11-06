@@ -12,7 +12,6 @@
           prefix: 'You are a helpful software engineer assistant.'
         disabledTools:
           - tool-web
-        autoCompaction: false
 
 # Retain any other existing inject dependencies on these rows.
 - id: preset-standard

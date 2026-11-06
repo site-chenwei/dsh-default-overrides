@@ -19,8 +19,6 @@
     disabledTools:
       - tool-web
       - tool-workflow
-    # Disable native automatic compaction in every preset that ships a compaction-basic row.
-    autoCompaction: false
 
 # The bundle supplies the ready gate for preset-standard, preset-ptc, preset-cordis,
 # preset-minimal, system-prompt and web-runtime. If another patch overrides inject,

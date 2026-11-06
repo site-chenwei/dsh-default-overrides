@@ -47,7 +47,6 @@ dsh plugin --profile web add dsh-default-overrides
     disabledTools:
       - tool-web
       - tool-workflow
-    autoCompaction: false
 ```
 
 保存配置、完整重启 DSH，再新建会话确认。**多个示例请合并到同一份 `config` 中。** DSH 会整体替换这份配置，修改时保留仍需使用的字段。完整配置示例见 [配置示例](examples/cordis.patch.yml)。
@@ -62,7 +61,6 @@ dsh plugin --profile web add dsh-default-overrides
 | `persona` | 未设置 | 不设置时保留原有人设 |
 | `personaPresets` | `['standard']` | 接受人设覆盖的预设名单；仅在配置 `persona` 时生效 |
 | `disabledTools` | `[]` | 禁用 `standard` 中指定的配置 ID |
-| `autoCompaction` | 未设置 | 保留 DSH 当前设置；`false` 关闭原生自动压缩 |
 
 ### 反向代理模式
 
@@ -78,10 +76,9 @@ dsh plugin --profile web add dsh-default-overrides
 |---|---|---|
 | `includeHarnessIdentity` | `false` | 隐藏 DSH 框架身份提示句 |
 | `surfaceContext` | `false` | 关闭 Web 表层提示段与 `DSH_WEB_URL` |
-| `autoCompaction` | `true` | 保持原生自动压缩开启 |
 | `disabledTools` | `[]` | 不额外禁用任何工具 |
 
-显式写出的配置项优先于反代模式默认值。例如同时写 `reverseProxyMode: true` 和 `autoCompaction: false`，自动压缩仍会关闭。`persona` 没有通用默认值，反代模式不会改写人设。
+显式写出的配置项优先于反代模式默认值。`persona` 没有通用默认值，反代模式不会改写人设。
 
 
 ### 身份提示与环境说明
@@ -139,20 +136,9 @@ dsh plugin --profile web add dsh-default-overrides
 
 只影响 `standard` 预设。这里填写的是预设中的配置 ID，不是界面显示名称；常见 ID 还有 `tool-ralph`、`skill-filesystem`，实际可用项随 DSH 版本而定。ID 不存在时会明确报错；写 `[]` 或省略该项即可保留全部工具。
 
-### 关闭原生自动压缩
+## 从 0.8.x 升级
 
-```yaml
-- id: dsh-default-overrides
-  config:
-    autoCompaction: false
-```
-
-DSH 默认会在上下文接近上限时自动压缩历史。`autoCompaction: false` 关闭这个自动流程，上下文不再被自动改写，压缩时机完全由你控制。
-
-- 只影响 `standard`、`ptc`、`cordis`、`minimal` 以及任何自带 `compaction-basic` 行的预设；没有这一行的预设原样保留。不需要像人设那样填写名单。
-- 手动压缩不受影响：会话里执行 `/compact` 仍然可用，ACP 客户端的压缩行为也不变。
-- **风险**：关闭后长会话不会再自动腾出空间，超出上下文上限时会直接报错，需要你自己及时执行 `/compact` 或开新会话。
-- 省略该项即保留 DSH 原有行为；写 `true` 与省略等效，用于显式表达意图。
+0.9.0 移除了 `autoCompaction` 配置项：插件不再修改 DSH 的自动压缩行为。配置中保留该字段会得到明确的启动错误，请删除它；自动压缩继续由 DSH 自身控制。
 
 ## 从 0.6.x 升级
 
@@ -169,7 +155,6 @@ DSH 默认会在上下文接近上限时自动压缩历史。`autoCompaction: fa
 | 人设没有生效 | 检查当前预设是否在 `personaPresets` 中 |
 | 系统提示词里仍有 checkout 路径或 GUI 说明 | 用 `surfaceContext: false` 关闭；固定开场白 `You are an AI agent powered by DeepSeek Harness.` 由 `includeHarnessIdentity` 控制 |
 | 禁用工具时报 ID 不存在 | 按当前 DSH 版本核对配置 ID，或先删除该项恢复启动 |
-| 长会话中途报上下文超限 | 若设置过 `autoCompaction: false`，改回省略该项，或手动执行 `/compact` |
 
 ## 更新与卸载
 

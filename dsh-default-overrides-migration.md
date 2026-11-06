@@ -8,6 +8,10 @@
 
 更新后完整重启 DSH，并新建会话确认设置。旧会话可能保留原来的配置。
 
+## 升级到 0.9.0
+
+0.9.0 移除了 `autoCompaction` 配置项：插件不再修改 DSH 的自动压缩行为。配置中保留该字段会得到明确的启动错误，请删除它；自动压缩继续由 DSH 自身控制。
+
 ## 升级到 0.7.0
 
 0.7.0 移除了 Shell 覆盖，改为只保留系统提示词、人设和工具开关。以下字段不再生效：
@@ -21,7 +25,7 @@
 | `normalizeWindowsPaths` | 删除；插件不再改写命令路径 |
 | `shellPath` / `blockNestedShells` | 删除；旧兼容选项已移除 |
 
-保留这些字段会得到明确的启动错误，而不是静默改变行为。删除后，其余配置项（`includeHarnessIdentity`、`surfaceContext`、`persona`、`personaPresets`、`disabledTools`、`autoCompaction`）保持原语义。
+保留这些字段会得到明确的启动错误，而不是静默改变行为。删除后，其余配置项（`includeHarnessIdentity`、`surfaceContext`、`persona`、`personaPresets`、`disabledTools`）保持原语义。
 
 同时，0.7.0 不再随包提供 Bash / PowerShell 适配器和验证脚本，npm 包只包含单个运行入口 `scripts/dsh-default-overrides.mjs`。
 
@@ -40,7 +44,7 @@
 **升级时写清版本号。** 安装走 pnpm，而 pnpm 从 11 起默认开启发布冷却期（`minimumReleaseAge`，1440 分钟）：版本发布后 24 小时内不参与解析。所以刚发布时用不带版本号的命令，装回来的其实是更早的版本。用固定版本安装，并确认实际装的版本：
 
 ```sh
-dsh plugin --profile <profile> add dsh-default-overrides@0.7.0
+dsh plugin --profile <profile> add dsh-default-overrides@0.9.0
 cat ~/.dsh/profiles/<profile>/node_modules/dsh-default-overrides/package.json | grep '"version"'
 ```
 
@@ -48,7 +52,7 @@ cat ~/.dsh/profiles/<profile>/node_modules/dsh-default-overrides/package.json | 
 
 ## 文件部署
 
-0.7.0 的文件部署只需要主入口和一个补丁文件：
+0.9.0 的文件部署只需要主入口和一个补丁文件：
 
 - [主插件](scripts/dsh-default-overrides.mjs)
 - [补丁文件](cordis.patch.yml)
@@ -62,8 +66,6 @@ cat ~/.dsh/profiles/<profile>/node_modules/dsh-default-overrides/package.json | 
 ## 自建预设与已有配置
 
 `disabledTools` 仍只影响 `standard`。将自建预设加入 `personaPresets`，只会让它接收人设配置。
-
-`autoCompaction` 是例外：它作用于任何自带 `compaction-basic` 行的预设，不需要名单，也不需要自建预设做额外配置。自建预设若删掉了该行，插件会原样放行。
 
 名单填写预设标识（预设配置中的 `id`）；对应预设条目的 `inject` 还需要包含 `dshDefaultOverridesReady`。例如条目 ID 为 `preset-my-assistant` 时：
 

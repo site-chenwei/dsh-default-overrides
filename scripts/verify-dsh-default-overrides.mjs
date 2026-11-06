@@ -125,7 +125,6 @@ async function runtime(config, options = {}) {
 }
 const sectionTexts = assembly => assembly.sections.map(section => section.text);
 const personaRow = config => flatten(config.plugins).find(row => row.id === 'persona');
-const compactionRow = config => flatten(config.plugins).find(row => row.id === 'compaction-basic');
 
 try {
   const PERSONA = 'You are a helpful software engineer assistant.';
@@ -145,7 +144,7 @@ try {
     [{ persona: { complete: 'yes' } }, /persona\.complete must be a boolean/],
     [{ includeHarnessIdentity: 'no' }, /includeHarnessIdentity must be a boolean/],
     [{ surfaceContext: 'no' }, /surfaceContext must be a boolean/],
-    [{ autoCompaction: 'no' }, /autoCompaction must be a boolean/],
+    [{ autoCompaction: false }, /autoCompaction was removed in 0\.9\.0/],
     [{ reverseProxyMode: 'yes' }, /reverseProxyMode must be a boolean/],
     [{ shellMode: 'bash' }, /shellMode was removed in 0\.7\.0/],
     [{ bashPath: '/bin/bash' }, /bashPath was removed in 0\.7\.0/],
@@ -153,11 +152,8 @@ try {
   assert.deepEqual(await registeredPreset({}), standard.config);
   assert.deepEqual(await registeredPreset({ personaPresets: ['ptc'] }), standard.config, 'personaPresets without persona is inert');
   console.log('PASS: option validation and zero-impact empty config');
-  const reverseDefaults = await registeredPreset({ reverseProxyMode: true });
-  assert.deepEqual(compactionRow(reverseDefaults).config, { auto: true });
-  assert.equal(flatten(reverseDefaults.plugins).some(row => row.id === 'tool-web' && row.disabled === true), false);
-  const reverseExplicit = await registeredPreset({ reverseProxyMode: true, autoCompaction: false, disabledTools: ['tool-web'] });
-  assert.deepEqual(compactionRow(reverseExplicit).config, { auto: false });
+  assert.deepEqual(await registeredPreset({ reverseProxyMode: true }), standard.config);
+  const reverseExplicit = await registeredPreset({ reverseProxyMode: true, disabledTools: ['tool-web'] });
   assert.equal(flatten(reverseExplicit.plugins).find(row => row.id === 'tool-web').disabled, true);
   console.log('PASS: reverseProxyMode applies defaults and explicit options win');
 
@@ -186,20 +182,6 @@ try {
     await assert.rejects(() => registeredPreset({ persona: { prefix: PERSONA }, personaPresets }), /personaPresets must be an array/);
   }
   console.log('PASS: persona overrides respect personaPresets and preserve untouched presets');
-
-  // 自动压缩只改 compaction-basic 行；缺行放行，改名报错。
-  const shippedGroup = standard.config.plugins.find(row => row.id === 'compaction');
-  assert.equal(shippedGroup.config.find(row => row.id === 'compaction-basic').config, undefined);
-  const autoOff = await registeredPreset({ autoCompaction: false });
-  assert.deepEqual(compactionRow(autoOff).config, { auto: false });
-  assert.deepEqual(autoOff.plugins.filter(row => row.id !== 'compaction'), standard.config.plugins.filter(row => row.id !== 'compaction'));
-  assert.deepEqual(compactionRow(await registeredPreset({ autoCompaction: true })).config, { auto: true });
-  assert.deepEqual(compactionRow(await registeredPreset({ autoCompaction: false }, minimal)).config, { auto: false });
-  assert.deepEqual(await registeredPreset({ autoCompaction: false }, sparse), sparse.config);
-  const renamed = structuredClone(standard);
-  renamed.config.plugins.find(row => row.id === 'compaction').config.find(row => row.id === 'compaction-basic').name = '@deepseek-ai/dsh-compaction-other';
-  await assert.rejects(() => registeredPreset({ autoCompaction: false }, renamed), /review compaction compatibility/);
-  console.log('PASS: autoCompaction rewrites only the shipped compaction row');
 
   // includeHarnessIdentity 只删身份段，不影响 persona。
   const defaultAssembly = await runtime({ persona: { prefix: PERSONA, suffix: SUFFIX } });

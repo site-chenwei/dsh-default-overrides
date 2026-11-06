@@ -3,8 +3,6 @@ export const name = 'dsh-default-overrides';
 export const inject = ['loader', 'agentPresets'];
 
 const PERSONA_ROW = { id: 'persona', name: '@deepseek-ai/dsh-persona' };
-// 自动压缩由预设内 compaction 组的这一行决定；四个内置预设都携带它，且都不带 config。
-const COMPACTION_ROW = { id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' };
 const PERSONA_KEYS = ['prefix', 'suffix', 'complete', 'includeRuntimeContext'];
 // persona 名单对所有预设一视同仁；省略时只覆盖 standard。
 const DEFAULT_PERSONA_PRESETS = ['standard'];
@@ -13,7 +11,6 @@ const REMOVED_OPTIONS = ['shellMode', 'shellPath', 'bashPath', 'pwshPath', 'time
 const REVERSE_PROXY_DEFAULTS = Object.freeze({
   includeHarnessIdentity: false,
   surfaceContext: false,
-  autoCompaction: true,
   disabledTools: [],
 });
 
@@ -68,6 +65,9 @@ export async function apply(ctx, options = {}) {
   if (reverseProxyMode !== undefined && typeof reverseProxyMode !== 'boolean') {
     throw new Error('dsh-default-overrides: reverseProxyMode must be a boolean');
   }
+  if (options.autoCompaction !== undefined) {
+    throw new Error('dsh-default-overrides: autoCompaction was removed in 0.9.0; native compaction is controlled by DSH');
+  }
   const modeDefaults = reverseProxyMode === true ? REVERSE_PROXY_DEFAULTS : {};
   // Note: 禁用清单改由配置提供，默认不触碰官方工具行 — 见 .agents/notes/implemented/feature/2026-09-24-configurable-disabled-tools.md。
   const disabledTools = options.disabledTools ?? modeDefaults.disabledTools ?? [];
@@ -86,10 +86,6 @@ export async function apply(ctx, options = {}) {
   const surfaceContext = options.surfaceContext ?? modeDefaults.surfaceContext;
   if (surfaceContext !== undefined && typeof surfaceContext !== 'boolean') {
     throw new Error('dsh-default-overrides: surfaceContext must be a boolean');
-  }
-  const autoCompaction = options.autoCompaction ?? modeDefaults.autoCompaction;
-  if (autoCompaction !== undefined && typeof autoCompaction !== 'boolean') {
-    throw new Error('dsh-default-overrides: autoCompaction must be a boolean');
   }
 
   const [{ default: AgentPreset }, { applyEntryPatches }, { default: SystemPrompt }] = await Promise.all([
@@ -136,18 +132,6 @@ export async function apply(ctx, options = {}) {
     };
   }
 
-  // Note: 自动压缩由预设内 compaction-basic 行的官方开关决定，只改这一行、不动同组的其他行
-  // — 见 .agents/notes/implemented/feature/2026-10-15-configurable-auto-compaction.md。
-  function compactionPatch(rows, presetId) {
-    const matches = rows.filter(row => row.id === COMPACTION_ROW.id);
-    if (matches.length === 0) return undefined;
-    if (matches.length > 1 || matches[0].name !== COMPACTION_ROW.name) {
-      throw new Error(`dsh-default-overrides: shipped preset changed at ${COMPACTION_ROW.id} in preset ${presetId}; review compaction compatibility`);
-    }
-    // 行补丁整体替换 config，因此先展开当前有效值；上游默认不带 config，展开后只多出 auto。
-    return { id: COMPACTION_ROW.id, name: COMPACTION_ROW.name, config: { ...matches[0].config, auto: autoCompaction } };
-  }
-
   ctx.on('internal/config', function (fiber, next) {
     const config = next();
     // Note: harness:identity 由全局 system-prompt 行注册，这里只改它的官方开关 — 见 .agents/notes/implemented/feature/2026-09-24-configurable-harness-identity.md。
@@ -159,24 +143,17 @@ export async function apply(ctx, options = {}) {
     if (applyWebApp !== undefined && fiber?.runtime?.callback === applyWebApp) {
       return surfaceContext === undefined ? config : { ...config, surfaceContext };
     }
-    // 行补丁只作用于官方预设：standard 是工具禁用清单的结构基线，persona 与压缩按各自适用名单生效。
+    // 行补丁只作用于官方预设：standard 是工具禁用清单的结构基线，persona 按配置的预设名单生效。
     if (fiber?.runtime?.callback !== AgentPreset) return config;
     const structural = config.id === 'standard';
     const applyPersona = persona !== undefined && personaPresets.includes(config.id);
-    // 压缩开关不限于 standard：任何携带 compaction-basic 行的预设都生效，缺行的预设原样放行。
-    const applyCompaction = autoCompaction !== undefined;
-    if (!applyPersona && !applyCompaction && (!structural || disabledTools.length === 0)) return config;
+    if (!applyPersona && (!structural || disabledTools.length === 0)) return config;
     if (patched.has(config)) return patched.get(config);
     const rows = flattenRows(config.plugins);
     const patches = [];
     if (applyPersona) {
       verifyPersonaOption(persona);
       patches.push(personaPatch(rows, config.id));
-    }
-    if (applyCompaction) {
-      // 上游行 ID 或所属位置变化时明确报错，避免 applyEntryPatches 只留一条 warning 后静默不生效。
-      const patch = compactionPatch(rows, config.id);
-      if (patch !== undefined) patches.push(patch);
     }
     if (structural) {
       // 上游行 ID 变化时明确报错，避免 applyEntryPatches 只留一条 warning 后静默不生效。
