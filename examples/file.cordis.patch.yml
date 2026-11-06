@@ -1,35 +1,19 @@
 # Legacy file deployment only; do not combine with the installed bundle.
-# Replace the entry URL and executable paths with your actual locations.
+# Replace the entry URL with the actual location of scripts/dsh-default-overrides.mjs.
 - insert:
     - id: dsh-default-overrides
-      name: 'file:///C:/Tools/dsh-default-overrides/scripts/dsh-default-overrides.mjs'
+      name: 'file:///Users/me/dsh-default-overrides/scripts/dsh-default-overrides.mjs'
       config:
-        shellMode: persistent-bash
-        # Optional: Windows resolves the first bash.exe on the host PATH; other hosts retain /bin/bash.
-        bashPath: 'C:/Program Files/Git/bin/bash.exe'
-        # Optional: omit to let the official PowerShell executor auto-detect.
-        pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'
-        timeoutMs: 300000
-        envContext: true
-        # Standard preset row ids to disable; omit the key to keep every shipped row.
-        disabledTools:
-          - tool-web
-          - tool-workflow
-        # Override the standard persona row; unset fields keep their current values.
+        includeHarnessIdentity: false
+        surfaceContext: false
+        personaPresets:
+          - standard
         persona:
           prefix: 'You are a helpful software engineer assistant.'
-        # Hide the global harness:identity section for the whole profile.
-        includeHarnessIdentity: false
-        # Hide the Web surface prompts (harness:source, app:web-surface) and DSH_WEB_URL.
-        surfaceContext: false
-        # Disable native automatic compaction in every preset that ships a compaction-basic row.
+        disabledTools:
+          - tool-web
         autoCompaction: false
-        # Optional compatibility rewrite; environment detection does not require it.
-        normalizeWindowsPaths: false
 
-# Deploy all five scripts together: dsh-default-overrides.mjs,
-# gitbash-executor.mjs, command-paths.mjs, bash-runtime.mjs
-# and windows-bash-terminal.mjs.
 # Retain any other existing inject dependencies on these rows.
 - id: preset-standard
   inject:

@@ -1,7 +1,7 @@
 {
   "name": "dsh-default-overrides",
-  "version": "0.6.0",
-  "description": "Configurable Bash and PowerShell overrides for the DSH standard preset.",
+  "version": "0.7.0",
+  "description": "Prompt, persona and tool overrides for the DSH standard preset.",
   "type": "module",
   "license": "MIT",
   "main": "./scripts/dsh-default-overrides.mjs",
@@ -10,7 +10,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "scripts/*.mjs",
+    "scripts/dsh-default-overrides.mjs",
     "cordis.patch.yml",
     "examples/",
     "dsh-default-overrides-migration.md"
@@ -19,8 +19,8 @@
     "dsh",
     "dsh-plugin",
     "deepseek-harness",
-    "bash",
-    "powershell"
+    "system-prompt",
+    "persona"
   ],
   "publishConfig": {
     "access": "public"
@@ -31,9 +31,8 @@
     }
   },
   "scripts": {
-    "check": "node --check scripts/dsh-default-overrides.mjs && node --check scripts/gitbash-executor.mjs && node --check scripts/command-paths.mjs && node --check scripts/bash-runtime.mjs && node --check scripts/windows-bash-terminal.mjs && node --check scripts/verify-bash-runtime.mjs && node --check scripts/verify-dsh-default-overrides.mjs && node --check scripts/verify-package.mjs",
+    "check": "node --check scripts/dsh-default-overrides.mjs && node --check scripts/verify-dsh-default-overrides.mjs && node --check scripts/verify-package.mjs",
     "verify": "node scripts/verify-dsh-default-overrides.mjs",
-    "verify:windows": "node scripts/verify-dsh-default-overrides.mjs --windows",
     "verify:package": "npm run check && node scripts/verify-package.mjs",
     "prepack": "npm run check"
   }

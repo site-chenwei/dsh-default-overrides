@@ -1,19 +1,11 @@
 # Merge into $DSH_HOME/profiles/<profile>/cordis.patch.yml AFTER bundle installation.
 # This updates the bundle-owned entry; do not insert a second plugin instance.
-# Replace the paths with your actual executables. macOS Bash example: /bin/bash.
 - id: dsh-default-overrides
   config:
-    shellMode: persistent-bash
-    # Optional: Windows resolves the first bash.exe on the host PATH; other hosts retain /bin/bash.
-    bashPath: 'C:/Program Files/Git/bin/bash.exe'
-    # Optional: omit to let the official PowerShell executor auto-detect.
-    pwshPath: 'C:/Program Files/PowerShell/7/pwsh.exe'
-    timeoutMs: 300000
-    envContext: true
-    # Standard preset row ids to disable; omit the key to keep every shipped row.
-    disabledTools:
-      - tool-web
-      - tool-workflow
+    # Hide the global harness:identity section for the whole profile.
+    includeHarnessIdentity: false
+    # Hide the Web surface prompts (harness:source, app:web-surface) and DSH_WEB_URL.
+    surfaceContext: false
     # Only listed presets receive this persona; [] disables all overrides.
     personaPresets:
       - standard
@@ -21,15 +13,14 @@
       - cordis
     persona:
       prefix: 'You are a helpful software engineer assistant.'
-    # Hide the global harness:identity section for the whole profile.
-    includeHarnessIdentity: false
-    # Hide the Web surface prompts (harness:source, app:web-surface) and DSH_WEB_URL.
-    surfaceContext: false
+    # Standard preset row ids to disable; omit the key to keep every shipped row.
+    disabledTools:
+      - tool-web
+      - tool-workflow
     # Disable native automatic compaction in every preset that ships a compaction-basic row.
     autoCompaction: false
-    # Optional compatibility rewrite; environment detection does not require it.
-    normalizeWindowsPaths: false
 
-# The bundle supplies preset-standard.inject. If another patch overrides inject,
-# retain dshDefaultOverridesReady alongside that patch's other dependencies.
-# The same applies to the web-runtime row: keep its webStartup dependency.
+# The bundle supplies the ready gate for preset-standard, preset-ptc, preset-cordis,
+# preset-minimal, system-prompt and web-runtime. If another patch overrides inject,
+# retain dshDefaultOverridesReady alongside that patch's other dependencies; keep
+# webStartup on the web-runtime row.

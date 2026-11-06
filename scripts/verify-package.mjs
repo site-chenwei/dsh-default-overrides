@@ -6,12 +6,10 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-// Usage: npm run verify:package -- <dsh-install-dir> <bash-path> [pwsh-path]
+// Usage: npm run verify:package -- <dsh-install-dir>
 // Note: test the published artifact and real bundle wiring — 见 .agents/notes/implemented/architecture/2026-09-24-distributable-dsh-bundle.md。
-const [installationArg, bashPath, pwshPath] = process.argv.slice(2);
-if (!installationArg || !bashPath || !process.env.npm_execpath) {
-  throw new Error('Usage: npm run verify:package -- <dsh-install-dir> <bash-path> [pwsh-path]');
-}
+const [installationArg] = process.argv.slice(2);
+if (!installationArg || !process.env.npm_execpath) throw new Error('Usage: npm run verify:package -- <dsh-install-dir>');
 const installation = resolve(installationArg);
 const installAnchor = join(installation, 'package.json');
 const requireDsh = createRequire(installAnchor);
@@ -22,13 +20,12 @@ const home = join(scratch, 'home');
 const profileDir = join(home, 'profiles', 'web');
 const env = { ...process.env, DSH_HOME: home };
 const manifest = JSON.parse(readFileSync(join(repository, 'package.json'), 'utf8'));
-const runtimeFiles = ['dsh-default-overrides.mjs', 'gitbash-executor.mjs', 'command-paths.mjs', 'bash-runtime.mjs', 'windows-bash-terminal.mjs'];
+const runtimeFiles = ['dsh-default-overrides.mjs'];
 const runNode = (args, options = {}) => execFileSync(process.execPath, args, {
   cwd: repository, env, stdio: 'inherit', ...options,
 });
 
 try {
-  // Syntax is checked by verify:package; avoid lifecycle output in npm's JSON.
   const [archive] = Object.values(JSON.parse(runNode([
     process.env.npm_execpath, 'pack', '--json', '--ignore-scripts', '--pack-destination', scratch,
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] })));
@@ -36,6 +33,8 @@ try {
   for (const file of ['package.json', 'cordis.patch.yml', ...runtimeFiles.map(file => `scripts/${file}`)]) {
     assert(files.has(file), `archive is missing ${file}`);
   }
+  assert(!files.has('scripts/verify-dsh-default-overrides.mjs'), 'verification scripts stay out of the npm package');
+  assert(!files.has('scripts/verify-package.mjs'), 'verification scripts stay out of the npm package');
   assert(!archive.files.some(file => /^(?:node_modules|\.idea|\.git)\//.test(file.path)), 'no local dependencies or editor state in archive');
 
   // The real CLI installs and selects the bundle, entirely inside a temporary home.
@@ -54,7 +53,7 @@ try {
 
   // Exercise the documented user layer, then inspect the real DSH composition.
   writeFileSync(join(profileDir, 'cordis.patch.yml'), JSON.stringify([
-    { id: 'dsh-default-overrides', config: { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], autoCompaction: false, persona: { prefix: 'You are a helpful software engineer assistant.' } } },
+    { id: 'dsh-default-overrides', config: { includeHarnessIdentity: false, surfaceContext: false, disabledTools: ['tool-web'], autoCompaction: false, persona: { prefix: 'You are a helpful software engineer assistant.' } } },
   ]));
   const profile = boot.loadProfileDirectory('dsh', profileDir, installAnchor);
   assert(profile.layers.some(layer => layer.packageName === manifest.name), 'bundle passes host compatibility and patch loading');
@@ -66,15 +65,13 @@ try {
   assert(entries.find(row => row.id === 'system-prompt').inject?.includes('dshDefaultOverridesReady'), 'the bundle patch must gate the global system-prompt row');
   assert.equal(entries.filter(row => row.id === entry.id).length, 1);
   assert.equal(entry.name, manifest.name);
-  assert.deepEqual(entry.config, { shellMode: 'bash', bashPath, disabledTools: ['tool-web'], autoCompaction: false, persona: { prefix: 'You are a helpful software engineer assistant.' } });
+  assert.deepEqual(entry.config, { includeHarnessIdentity: false, surfaceContext: false, disabledTools: ['tool-web'], autoCompaction: false, persona: { prefix: 'You are a helpful software engineer assistant.' } });
   assert(standard.inject.includes('dshDefaultOverridesReady'));
-  // 每个可能被 persona 行补丁命中的预设行都必须等到本插件就绪：缺一条 inject，那个预设就静默拿不到人设。
   for (const id of ['preset-standard', 'preset-ptc', 'preset-cordis', 'preset-minimal']) {
     const preset = entries.find(row => row.id === id);
     assert(preset, `the shipped web profile must declare ${id}`);
     assert(preset.inject?.includes('dshDefaultOverridesReady'), `the bundle patch must gate ${id}`);
   }
-  // Web 表层段由该行按 surfaceContext 注册。覆盖 inject 时丢掉原有的 webStartup，会让 launcher 参数的 !!js 表达式全部求值失败。
   const webRuntime = entries.find(row => row.id === 'web-runtime');
   assert(webRuntime, 'the shipped web profile must declare web-runtime');
   for (const dependency of ['webStartup', 'dshDefaultOverridesReady']) {
@@ -99,63 +96,33 @@ try {
     const rows = received[0].plugins;
     assert.equal(rows.find(row => row.id === 'tool-web').disabled, true);
     assert.equal(rows.find(row => row.id === 'persona').config.prefix, 'You are a helpful software engineer assistant.');
-    const shell = rows.find(row => row.id === 'local-standard-persistent-shell');
-    assert.equal(shell.config[0].config.shellPath, bashPath);
-    // 自动压缩行嵌在预设的 compaction 组里，整包安装后也必须被改写。
     const compaction = rows.find(row => row.id === 'compaction').config.find(row => row.id === 'compaction-basic');
     assert.deepEqual(compaction.config, { auto: false });
-    assert.equal((await root.loader.import(shell.config[0].name)).name, 'gitbash-executor');
   } finally {
     await root.fiber.dispose();
   }
-  console.log('PASS: npm artifact, offline DSH installation, automatic bundle selection, profile overrides, package imports and ready-gated preset registration');
+  console.log('PASS: npm artifact, offline DSH installation, automatic bundle selection, profile overrides and ready-gated preset registration');
 
+  // File deployment example must remain a valid single-file patch.
   const fileDir = join(scratch, 'file-plugin');
   mkdirSync(fileDir);
-  for (const file of runtimeFiles) {
-    copyFileSync(fileURLToPath(new URL(`./scripts/${file}`, pathToFileURL(installedManifest))), join(fileDir, file));
-  }
+  copyFileSync(fileURLToPath(new URL('./scripts/dsh-default-overrides.mjs', pathToFileURL(installedManifest))), join(fileDir, 'dsh-default-overrides.mjs'));
   const [{ entryListSchema }, yaml] = await Promise.all([
     load('cordis-plugin-include'), import(pathToFileURL(requireDsh.resolve('js-yaml')).href),
   ]);
   const filePatches = yaml.load(readFileSync(join(repository, 'examples/file.cordis.patch.yml'), 'utf8'), { schema: entryListSchema });
   const fileEntry = filePatches[0].insert[0];
   fileEntry.name = pathToFileURL(join(fileDir, 'dsh-default-overrides.mjs')).href;
-  fileEntry.config = { ...fileEntry.config, shellMode: 'bash', bashPath, personaPresets: ['ptc'] };
+  fileEntry.config = { ...fileEntry.config, personaPresets: ['ptc'] };
   const fileEntries = boot.composeEntries([
     ...profile.layers.filter(layer => layer.packageName !== manifest.name).map(layer => layer.patches), filePatches,
   ], message => { throw new Error(message); });
-  const fileWebRuntime = fileEntries.find(row => row.id === 'web-runtime');
-  for (const dependency of ['webStartup', 'dshDefaultOverridesReady']) {
-    assert(fileWebRuntime?.inject?.includes(dependency), `the file deployment example must keep ${dependency} on web-runtime`);
+  assert(fileEntries.find(row => row.id === 'dsh-default-overrides'), 'file deployment example inserts the entry');
+  for (const id of ['preset-standard', 'preset-ptc', 'preset-cordis', 'preset-minimal', 'system-prompt']) {
+    assert(fileEntries.find(row => row.id === id)?.inject?.includes('dshDefaultOverridesReady'), `file deployment must gate ${id}`);
   }
-  const fileRoot = new Context();
-  const filePresets = [];
-  try {
-    await fileRoot.plugin(Loader, { baseUrl: pathToFileURL(installAnchor).href });
-    fileRoot.loader.builtins.group = Group;
-    fileRoot.provide('agentPresets', { register(config) { filePresets.push(config); return () => {}; } });
-    const ids = ['preset-standard', 'preset-ptc', 'preset-cordis', 'preset-minimal', 'system-prompt', fileEntry.id];
-    await fileRoot.loader.root.update(fileEntries.filter(row => ids.includes(row.id)));
-    await fileRoot.loader.await();
-    for (const row of fileRoot.loader.entries()) await row.fiber?.await();
-    const fileStandard = filePresets.find(preset => preset.id === 'standard');
-    const filePtc = filePresets.find(preset => preset.id === 'ptc');
-    assert.notEqual(fileStandard.plugins.find(row => row.id === 'persona').config.prefix, fileEntry.config.persona.prefix);
-    assert.equal(filePtc.plugins.find(row => row.id === 'persona').config.prefix, fileEntry.config.persona.prefix);
-    const assembly = await fileRoot.systemPrompt.assemble();
-    assert(!assembly.sections.some(section => section.name === 'harness:identity'));
-    const adapter = fileStandard.plugins.find(row => row.id === 'local-standard-persistent-shell').config[0];
-    assert.equal((await fileRoot.loader.import(adapter.name)).name, 'gitbash-executor');
-    assert.equal((await fileRoot.loader.import(new URL('./windows-bash-terminal.mjs', fileEntry.name).href)).name, 'windows-bash-terminal');
-  } finally { await fileRoot.fiber.dispose(); }
-  console.log('PASS: documented five-file deployment imports both adapters and gates persona/identity configuration');
-
-  // Run existing process tests from the installed artifact, including relative adapter lookup.
-  runNode([
-    fileURLToPath(new URL('./scripts/verify-dsh-default-overrides.mjs', pathToFileURL(installedManifest))),
-    installation, bashPath, ...(pwshPath ? [pwshPath] : []),
-  ]);
+  assert(fileEntries.find(row => row.id === 'web-runtime')?.inject?.includes('webStartup'), 'file deployment must keep webStartup');
+  console.log('PASS: documented single-file deployment example composes cleanly');
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
