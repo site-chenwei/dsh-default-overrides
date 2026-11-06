@@ -146,12 +146,20 @@ try {
     [{ includeHarnessIdentity: 'no' }, /includeHarnessIdentity must be a boolean/],
     [{ surfaceContext: 'no' }, /surfaceContext must be a boolean/],
     [{ autoCompaction: 'no' }, /autoCompaction must be a boolean/],
+    [{ reverseProxyMode: 'yes' }, /reverseProxyMode must be a boolean/],
     [{ shellMode: 'bash' }, /shellMode was removed in 0\.7\.0/],
     [{ bashPath: '/bin/bash' }, /bashPath was removed in 0\.7\.0/],
   ]) await assert.rejects(() => registeredPreset(config), pattern);
   assert.deepEqual(await registeredPreset({}), standard.config);
   assert.deepEqual(await registeredPreset({ personaPresets: ['ptc'] }), standard.config, 'personaPresets without persona is inert');
   console.log('PASS: option validation and zero-impact empty config');
+  const reverseDefaults = await registeredPreset({ reverseProxyMode: true });
+  assert.deepEqual(compactionRow(reverseDefaults).config, { auto: true });
+  assert.equal(flatten(reverseDefaults.plugins).some(row => row.id === 'tool-web' && row.disabled === true), false);
+  const reverseExplicit = await registeredPreset({ reverseProxyMode: true, autoCompaction: false, disabledTools: ['tool-web'] });
+  assert.deepEqual(compactionRow(reverseExplicit).config, { auto: false });
+  assert.equal(flatten(reverseExplicit.plugins).find(row => row.id === 'tool-web').disabled, true);
+  console.log('PASS: reverseProxyMode applies defaults and explicit options win');
 
   // 工具禁用只作用于 standard；其他预设原样放行。
   const disabled = await registeredPreset({ disabledTools: ['tool-web', 'tool-workflow'] });
@@ -232,6 +240,23 @@ try {
   } finally { await webHidden.dispose(); }
   assert.equal(shownSurface, true, 'surfaceContext true must reach the web-runtime entry');
   console.log('PASS: surfaceContext toggles only the two Web surface sections');
+
+  // 反代模式默认隐藏身份与 Web 表层上下文；显式 true 可以覆盖。
+  const reverse = await runtime({ reverseProxyMode: true, persona: { prefix: PERSONA, suffix: SUFFIX } }, { webRuntime: {} });
+  try {
+    const assembly = await reverse.assemble();
+    assert.deepEqual(webSections(assembly), []);
+    const prompt = modules['dsh-system-prompt'].renderPrompt(assembly);
+    assert(!prompt.includes(HARNESS_IDENTITY), 'reverseProxyMode must hide the harness identity');
+    assert(prompt.includes(PERSONA) && prompt.includes(SUFFIX));
+  } finally { await reverse.dispose(); }
+  const reverseRuntimeExplicit = await runtime({ reverseProxyMode: true, includeHarnessIdentity: true, surfaceContext: true, persona: { prefix: PERSONA, suffix: SUFFIX } }, { webRuntime: {} });
+  try {
+    const assembly = await reverseRuntimeExplicit.assemble();
+    assert.deepEqual(webSections(assembly), WEB_SECTIONS);
+    assert(modules['dsh-system-prompt'].renderPrompt(assembly).includes(HARNESS_IDENTITY), 'explicit includeHarnessIdentity true must win');
+  } finally { await reverseRuntimeExplicit.dispose(); }
+  console.log('PASS: reverseProxyMode hides prompt fingerprints unless explicitly overridden');
 
   // 预设行没等待 ready 时拿不到 persona 补丁；这是补丁里 inject 的必要性证据。
   const unready = await runtime({ persona: { prefix: PERSONA, suffix: SUFFIX }, personaPresets: ['standard', 'other'] }, { presetId: 'other', readyInject: false });

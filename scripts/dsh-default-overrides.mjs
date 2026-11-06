@@ -9,6 +9,13 @@ const PERSONA_KEYS = ['prefix', 'suffix', 'complete', 'includeRuntimeContext'];
 // persona 名单对所有预设一视同仁；省略时只覆盖 standard。
 const DEFAULT_PERSONA_PRESETS = ['standard'];
 const REMOVED_OPTIONS = ['shellMode', 'shellPath', 'bashPath', 'pwshPath', 'timeoutMs', 'envContext', 'normalizeWindowsPaths', 'blockNestedShells'];
+// 反代模式只提供缺省值；显式写出的配置项始终优先。
+const REVERSE_PROXY_DEFAULTS = Object.freeze({
+  includeHarnessIdentity: false,
+  surfaceContext: false,
+  autoCompaction: true,
+  disabledTools: [],
+});
 
 /** 校验 persona 覆盖项；键名或类型写错时直接报错，避免静默不生效。 */
 function verifyPersonaOption(persona) {
@@ -56,8 +63,14 @@ export async function apply(ctx, options = {}) {
       throw new Error(`dsh-default-overrides: ${key} was removed in 0.7.0; this package no longer overrides shell channels`);
     }
   }
+  // Note: 反代模式用于 DSH 经反向代理/API 网关转发的场景；未显式配置的项套用反代默认值。
+  const reverseProxyMode = options.reverseProxyMode;
+  if (reverseProxyMode !== undefined && typeof reverseProxyMode !== 'boolean') {
+    throw new Error('dsh-default-overrides: reverseProxyMode must be a boolean');
+  }
+  const modeDefaults = reverseProxyMode === true ? REVERSE_PROXY_DEFAULTS : {};
   // Note: 禁用清单改由配置提供，默认不触碰官方工具行 — 见 .agents/notes/implemented/feature/2026-09-24-configurable-disabled-tools.md。
-  const disabledTools = options.disabledTools ?? [];
+  const disabledTools = options.disabledTools ?? modeDefaults.disabledTools ?? [];
   if (!Array.isArray(disabledTools) || disabledTools.some(id => typeof id !== 'string' || id.length === 0)) {
     throw new Error('dsh-default-overrides: disabledTools must be an array of standard preset row ids');
   }
@@ -66,15 +79,15 @@ export async function apply(ctx, options = {}) {
   if (!Array.isArray(personaPresets) || personaPresets.some(id => typeof id !== 'string' || id.length === 0)) {
     throw new Error('dsh-default-overrides: personaPresets must be an array of agent preset ids');
   }
-  const includeHarnessIdentity = options.includeHarnessIdentity;
+  const includeHarnessIdentity = options.includeHarnessIdentity ?? modeDefaults.includeHarnessIdentity;
   if (includeHarnessIdentity !== undefined && typeof includeHarnessIdentity !== 'boolean') {
     throw new Error('dsh-default-overrides: includeHarnessIdentity must be a boolean');
   }
-  const surfaceContext = options.surfaceContext;
+  const surfaceContext = options.surfaceContext ?? modeDefaults.surfaceContext;
   if (surfaceContext !== undefined && typeof surfaceContext !== 'boolean') {
     throw new Error('dsh-default-overrides: surfaceContext must be a boolean');
   }
-  const autoCompaction = options.autoCompaction;
+  const autoCompaction = options.autoCompaction ?? modeDefaults.autoCompaction;
   if (autoCompaction !== undefined && typeof autoCompaction !== 'boolean') {
     throw new Error('dsh-default-overrides: autoCompaction must be a boolean');
   }

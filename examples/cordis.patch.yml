@@ -2,6 +2,8 @@
 # This updates the bundle-owned entry; do not insert a second plugin instance.
 - id: dsh-default-overrides
   config:
+    # Enable reverse-proxy defaults; the explicit options below still win.
+    reverseProxyMode: true
     # Hide the global harness:identity section for the whole profile.
     includeHarnessIdentity: false
     # Hide the Web surface prompts (harness:source, app:web-surface) and DSH_WEB_URL.

@@ -56,12 +56,33 @@ dsh plugin --profile web add dsh-default-overrides
 
 | 选项 | 默认值 | 说明 |
 |---|---|---|
+| `reverseProxyMode` | 未设置 | `true` 时按反向代理场景套用其余配置项的默认值，显式配置优先 |
 | `includeHarnessIdentity` | 未设置 | 保留 DSH 当前设置；`false` 隐藏框架身份提示句 |
 | `surfaceContext` | 未设置 | 保留 DSH 当前设置；`false` 关闭 Web 表层提示段与 `DSH_WEB_URL` |
 | `persona` | 未设置 | 不设置时保留原有人设 |
 | `personaPresets` | `['standard']` | 接受人设覆盖的预设名单；仅在配置 `persona` 时生效 |
 | `disabledTools` | `[]` | 禁用 `standard` 中指定的配置 ID |
 | `autoCompaction` | 未设置 | 保留 DSH 当前设置；`false` 关闭原生自动压缩 |
+
+### 反向代理模式
+
+`reverseProxyMode: true` 面向 DSH 经反向代理或 API 网关转发的场景：当其他配置项没有显式写出时，自动套用以下默认值：
+
+```yaml
+- id: dsh-default-overrides
+  config:
+    reverseProxyMode: true
+```
+
+| 配置项 | 反代模式默认值 | 作用 |
+|---|---|---|
+| `includeHarnessIdentity` | `false` | 隐藏 DSH 框架身份提示句 |
+| `surfaceContext` | `false` | 关闭 Web 表层提示段与 `DSH_WEB_URL` |
+| `autoCompaction` | `true` | 保持原生自动压缩开启 |
+| `disabledTools` | `[]` | 不额外禁用任何工具 |
+
+显式写出的配置项优先于反代模式默认值。例如同时写 `reverseProxyMode: true` 和 `autoCompaction: false`，自动压缩仍会关闭。`persona` 没有通用默认值，反代模式不会改写人设。
+
 
 ### 身份提示与环境说明
 
