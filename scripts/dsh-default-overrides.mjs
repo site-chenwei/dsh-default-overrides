@@ -175,4 +175,33 @@ export async function apply(ctx, options = {}) {
 
   // 宿主 preset-standard 的 inject 必须包含本信号；不要把它加在 agentPresets 注册表上。
   ctx.provide('dshDefaultOverridesReady', true);
+
+  // 兜底：bundle 补丁按顺序整体替换 inject，后安装的插件可能覆盖掉预设行上的 ready 信号，
+  // 导致预设先于本插件注册、internal/config 补丁静默丢失。预设通常在本插件之后才启动，
+  // 因此既处理已启动的预设，也在预设刚进入 active 状态时补一次配置重解析。
+  const refreshTargets = new Set(personaPresets.map(id => `preset-${id}`));
+  if (disabledTools.length > 0) refreshTargets.add('preset-standard');
+  const refreshedPresets = new WeakSet();
+  async function refreshPreset(fiber) {
+    if (!fiber?.entry || !refreshTargets.has(fiber.entry.options?.id)) return;
+    if (refreshedPresets.has(fiber)) return;
+    if (Object.hasOwn(fiber.inject ?? {}, 'dshDefaultOverridesReady')) return;
+    refreshedPresets.add(fiber);
+    try {
+      await fiber.update(fiber.config, true);
+    } catch (error) {
+      ctx.logger.warn('dsh-default-overrides: could not refresh preset %s: %s', fiber.entry.options.id, error);
+    }
+  }
+  const refreshEntry = (entry) => {
+    if (entry.fiber) void refreshPreset(entry.fiber);
+  };
+  for (const entry of ctx.loader.entries()) refreshEntry(entry);
+  ctx.on('internal/status', (fiber) => {
+    if (fiber.state === 2 && fiber.entry) void refreshPreset(fiber);
+  }, { global: true });
+  setTimeout(() => {
+    if (ctx.fiber?.uid == null) return;
+    for (const entry of ctx.loader.entries()) refreshEntry(entry);
+  }, 250);
 }

@@ -240,13 +240,13 @@ try {
   } finally { await reverseRuntimeExplicit.dispose(); }
   console.log('PASS: reverseProxyMode hides prompt fingerprints unless explicitly overridden');
 
-  // 预设行没等待 ready 时拿不到 persona 补丁；这是补丁里 inject 的必要性证据。
+  // 预设行没等待 ready（被后安装的 bundle 覆盖 inject）时，运行时会补一次刷新。
   const unready = await runtime({ persona: { prefix: PERSONA, suffix: SUFFIX }, personaPresets: ['standard', 'other'] }, { presetId: 'other', readyInject: false });
   try {
     const texts = sectionTexts(await unready.assemble());
-    assert(!texts.includes(PERSONA), 'ungated preset must keep its official prefix');
+    assert(texts.includes(PERSONA), 'ungated preset must be refreshed by the runtime fallback');
   } finally { await unready.dispose(); }
-  console.log('PASS: the ready gate is load-bearing for preset patches');
+  console.log('PASS: ungated presets are refreshed at runtime');
 
   // 运行时重新配置插件会让真实预设重新注册，且拿到新的人设。
   await registeredPreset({ persona: { prefix: PERSONA, suffix: SUFFIX } }, standard, async (root, received) => {
