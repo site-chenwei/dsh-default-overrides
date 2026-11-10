@@ -218,6 +218,11 @@ try {
     assert.deepEqual(webSections(assembly), []);
     assert.deepEqual(otherSections(assembly), shownOther);
     assert.equal(webHidden.root.loader.resolve('web-runtime').fiber?.effectiveConfig?.surfaceContext, false, 'surfaceContext false must reach the web-runtime entry');
+    // 模拟 profile HMR 重新解析 harness-dev-context（entry 被重新启用），assemble 层仍必须过滤。
+    const harnessEntry = webHidden.root.loader.resolve('harness-dev-context');
+    await harnessEntry.update({ disabled: false });
+    await settle(webHidden.root);
+    assert.deepEqual(webSections(await webHidden.assemble()), [], 'assemble filter must survive a re-enabled harness entry');
 
   } finally { await webHidden.dispose(); }
   assert.equal(shownSurface, true, 'surfaceContext true must reach the web-runtime entry');

@@ -154,7 +154,7 @@ dsh plugin --profile web add dsh-default-overrides
 | 升级到 0.7.0 后插件报 Shell 选项已移除 | 删除 `shellMode`、`bashPath`、`pwshPath`、`timeoutMs`、`envContext`、`normalizeWindowsPaths` 等旧字段；Shell 由 DSH 官方通道提供 |
 | 人设没有生效 | 检查当前预设是否在 `personaPresets` 中 |
 | 同时安装 billion-context 等会写 preset inject 的插件后人设仍不生效 | DSH 的 bundle patch 会整体替换 preset 行上的 `inject`，后安装的 bundle 可能覆盖 `dshDefaultOverridesReady`；0.9.1 起运行时会自动重刷未拿到该信号的预设。若仍不生效，在 profile 的 `cordis.patch.yml` 末尾按 `examples/cordis.patch.yml` 给四个 preset 行追加 `inject: [biliBasicCompactionPolicy, dshDefaultOverridesReady]`（保留对方原有依赖） |
-| 系统提示词里仍有 checkout 路径或 GUI 说明 | 用 `surfaceContext: false` 关闭；固定开场白 `You are an AI agent powered by DeepSeek Harness.` 由 `includeHarnessIdentity` 控制 |
+| 系统提示词里仍有 checkout 路径或 GUI 说明 | 用 `surfaceContext: false` 关闭；0.9.2 起还会在 `systemPrompt.assemble` 层过滤，即使 profile HMR 重新启用 `harness-dev-context` 也不会输出这两段。固定开场白 `You are an AI agent powered by DeepSeek Harness.` 由 `includeHarnessIdentity` 控制 |
 | 禁用工具时报 ID 不存在 | 按当前 DSH 版本核对配置 ID，或先删除该项恢复启动 |
 
 ## 更新与卸载

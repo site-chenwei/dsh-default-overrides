@@ -101,9 +101,32 @@ export async function apply(ctx, options = {}) {
     ctx.logger.warn('dsh-default-overrides: surfaceContext is configured but @deepseek-ai/dsh-web-app is unavailable in this profile; DSH_WEB_URL cannot be registered here');
   }
   const patched = new WeakMap();
+  const SURFACE_SECTION_NAMES = new Set(['harness:source', 'app:web-surface']);
 
   // DSH 0.2.2 把 harness:source / app:web-surface 移到独立的 harness-dev-context 行；
   // surfaceContext:false 必须同时停用该行，否则只关掉了 DSH_WEB_URL。
+  // 仅停用 entry 不够：profile HMR 会重新解析条目并恢复它。assemble() 层按名称过滤
+  // 是最终保护；即使 entry 再次激活，也不会把这两段送进模型。
+  function installSurfaceSuppressor(systemPrompt) {
+    if (systemPrompt === undefined) return;
+    const key = Symbol.for('dsh-default-overrides.surface-suppressor');
+    let state = systemPrompt[key];
+    if (state === undefined) {
+      state = { active: false, original: systemPrompt.assemble };
+      systemPrompt[key] = state;
+      systemPrompt.assemble = async function (context = {}) {
+        const assembly = await state.original.call(this, context);
+        if (!state.active) return assembly;
+        return {
+          ...assembly,
+          sections: (assembly.sections ?? []).filter(section => !SURFACE_SECTION_NAMES.has(section.name)),
+          contexts: (assembly.contexts ?? []).filter(entry => !SURFACE_SECTION_NAMES.has(entry.name)),
+        };
+      };
+    }
+    state.active = surfaceContext === false;
+  }
+
   function disableHarnessDevContext(entry) {
     if (entry?.options?.id !== 'harness-dev-context' || entry.options.disabled === true) return;
     entry.update({ disabled: true }).catch(error => ctx.logger.warn('dsh-default-overrides: could not disable harness-dev-context: %s', error));
@@ -175,6 +198,12 @@ export async function apply(ctx, options = {}) {
 
   // 宿主 preset-standard 的 inject 必须包含本信号；不要把它加在 agentPresets 注册表上。
   ctx.provide('dshDefaultOverridesReady', true);
+
+  // system-prompt 自身注入 dshDefaultOverridesReady，不能放进本插件的 inject（会形成循环）。
+  // 等它可用后再安装 assemble 过滤器，覆盖 HMR 恢复 harness-dev-context 的情况。
+  ctx.inject(['systemPrompt'], (spCtx) => {
+    installSurfaceSuppressor(spCtx.systemPrompt);
+  });
 
   // 兜底：bundle 补丁按顺序整体替换 inject，后安装的插件可能覆盖掉预设行上的 ready 信号，
   // 导致预设先于本插件注册、internal/config 补丁静默丢失。预设通常在本插件之后才启动，
