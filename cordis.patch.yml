@@ -6,23 +6,9 @@
       name: dsh-default-overrides
       config: {}
 
+# Note: standard 预设的工具行补丁在 internal/config 阶段生效，预设行必须先等到本插件就绪，
+# 否则它的 config 已经解析完，disabledTools 补丁会静默丢失。
 - id: preset-standard
-  inject:
-    - dshDefaultOverridesReady
-
-# Note: persona 行补丁在 internal/config 阶段生效，预设行必须先等到本插件就绪，
-# 否则它的 config 已经解析完，补丁静默丢失（standard 之外的预设行原本没有这条等待）。
-# ptc / cordis 是 personaPresets 的常规取值，minimal 一并接上，避免以后列进去踩同一个坑
-# — 见 .agents/notes/implemented/feature/2026-09-25-persona-across-presets.md。
-- id: preset-ptc
-  inject:
-    - dshDefaultOverridesReady
-
-- id: preset-cordis
-  inject:
-    - dshDefaultOverridesReady
-
-- id: preset-minimal
   inject:
     - dshDefaultOverridesReady
 

@@ -2,36 +2,15 @@
 # This updates the bundle-owned entry; do not insert a second plugin instance.
 - id: dsh-default-overrides
   config:
-    # Enable reverse-proxy defaults; the explicit options below still win.
-    reverseProxyMode: true
     # Hide the global harness:identity section for the whole profile.
     includeHarnessIdentity: false
     # Hide the Web surface prompts (harness:source, app:web-surface) and DSH_WEB_URL.
     surfaceContext: false
-    # Only listed presets receive this persona; [] disables all overrides.
-    personaPresets:
-      - standard
-      - ptc
-      - cordis
-    persona:
-      prefix: 'You are a helpful software engineer assistant.'
     # Standard preset row ids to disable; omit the key to keep every shipped row.
     disabledTools:
       - tool-web
       - tool-workflow
 
-# The bundle supplies the ready gate for preset-standard, preset-ptc, preset-cordis,
-# preset-minimal, system-prompt and web-runtime. If another patch overrides inject,
-# retain dshDefaultOverridesReady alongside that patch's other dependencies; keep
-# webStartup on the web-runtime row.
-
-# Example when billion-context is installed after this plugin (its bundle patch
-# replaces these inject lists): keep both services on each preset row.
-# - id: preset-standard
-#   inject: [biliBasicCompactionPolicy, dshDefaultOverridesReady]
-# - id: preset-ptc
-#   inject: [biliBasicCompactionPolicy, dshDefaultOverridesReady]
-# - id: preset-cordis
-#   inject: [biliBasicCompactionPolicy, dshDefaultOverridesReady]
-# - id: preset-minimal
-#   inject: [biliBasicCompactionPolicy, dshDefaultOverridesReady]
+# The bundle supplies the ready gate for preset-standard, system-prompt and web-runtime.
+# If another patch overrides inject, retain dshDefaultOverridesReady alongside that
+# patch's other dependencies; keep webStartup on the web-runtime row.

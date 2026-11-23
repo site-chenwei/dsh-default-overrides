@@ -53,7 +53,7 @@ try {
 
   // Exercise the documented user layer, then inspect the real DSH composition.
   writeFileSync(join(profileDir, 'cordis.patch.yml'), JSON.stringify([
-    { id: 'dsh-default-overrides', config: { includeHarnessIdentity: false, surfaceContext: false, disabledTools: ['tool-web'], persona: { prefix: 'You are a helpful software engineer assistant.' } } },
+    { id: 'dsh-default-overrides', config: { includeHarnessIdentity: false, surfaceContext: false, disabledTools: ['tool-web'] } },
   ]));
   const profile = boot.loadProfileDirectory('dsh', profileDir, installAnchor);
   assert(profile.layers.some(layer => layer.packageName === manifest.name), 'bundle passes host compatibility and patch loading');
@@ -65,13 +65,8 @@ try {
   assert(entries.find(row => row.id === 'system-prompt').inject?.includes('dshDefaultOverridesReady'), 'the bundle patch must gate the global system-prompt row');
   assert.equal(entries.filter(row => row.id === entry.id).length, 1);
   assert.equal(entry.name, manifest.name);
-  assert.deepEqual(entry.config, { includeHarnessIdentity: false, surfaceContext: false, disabledTools: ['tool-web'], persona: { prefix: 'You are a helpful software engineer assistant.' } });
+  assert.deepEqual(entry.config, { includeHarnessIdentity: false, surfaceContext: false, disabledTools: ['tool-web'] });
   assert(standard.inject.includes('dshDefaultOverridesReady'));
-  for (const id of ['preset-standard', 'preset-ptc', 'preset-cordis', 'preset-minimal']) {
-    const preset = entries.find(row => row.id === id);
-    assert(preset, `the shipped web profile must declare ${id}`);
-    assert(preset.inject?.includes('dshDefaultOverridesReady'), `the bundle patch must gate ${id}`);
-  }
   const webRuntime = entries.find(row => row.id === 'web-runtime');
   assert(webRuntime, 'the shipped web profile must declare web-runtime');
   for (const dependency of ['webStartup', 'dshDefaultOverridesReady']) {
@@ -95,7 +90,6 @@ try {
     assert.equal(received.length, 1, 'the real preset registers after the packaged plugin is ready');
     const rows = received[0].plugins;
     assert.equal(rows.find(row => row.id === 'tool-web').disabled, true);
-    assert.equal(rows.find(row => row.id === 'persona').config.prefix, 'You are a helpful software engineer assistant.');
   } finally {
     await root.fiber.dispose();
   }
@@ -105,20 +99,18 @@ try {
   const fileDir = join(scratch, 'file-plugin');
   mkdirSync(fileDir);
   copyFileSync(fileURLToPath(new URL('./scripts/dsh-default-overrides.mjs', pathToFileURL(installedManifest))), join(fileDir, 'dsh-default-overrides.mjs'));
-  const [{ entryListSchema }, yaml] = await Promise.all([
-    load('cordis-plugin-include'), import(pathToFileURL(requireDsh.resolve('js-yaml')).href),
-  ]);
-  const filePatches = yaml.load(readFileSync(join(repository, 'examples/file.cordis.patch.yml'), 'utf8'), { schema: entryListSchema });
+  const [{ parseEntryYaml }] = await Promise.all([load('cordis-plugin-include')]);
+  const filePatches = parseEntryYaml(readFileSync(join(repository, 'examples/file.cordis.patch.yml'), 'utf8'));
   const fileEntry = filePatches[0].insert[0];
   fileEntry.name = pathToFileURL(join(fileDir, 'dsh-default-overrides.mjs')).href;
-  fileEntry.config = { ...fileEntry.config, personaPresets: ['ptc'] };
   const fileEntries = boot.composeEntries([
     ...profile.layers.filter(layer => layer.packageName !== manifest.name).map(layer => layer.patches), filePatches,
   ], message => { throw new Error(message); });
   assert(fileEntries.find(row => row.id === 'dsh-default-overrides'), 'file deployment example inserts the entry');
-  for (const id of ['preset-standard', 'preset-ptc', 'preset-cordis', 'preset-minimal', 'system-prompt']) {
+  for (const id of ['preset-standard', 'system-prompt']) {
     assert(fileEntries.find(row => row.id === id)?.inject?.includes('dshDefaultOverridesReady'), `file deployment must gate ${id}`);
   }
+  assert(fileEntries.find(row => row.id === 'web-runtime')?.inject?.includes('dshDefaultOverridesReady'), 'file deployment must gate web-runtime');
   assert(fileEntries.find(row => row.id === 'web-runtime')?.inject?.includes('webStartup'), 'file deployment must keep webStartup');
   console.log('PASS: documented single-file deployment example composes cleanly');
 } finally {

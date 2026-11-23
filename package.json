@@ -1,7 +1,7 @@
 {
   "name": "dsh-default-overrides",
-  "version": "0.9.2",
-  "description": "Prompt, persona and tool overrides for the DSH standard preset.",
+  "version": "0.10.0",
+  "description": "System prompt and tool overrides for the DSH standard preset.",
   "type": "module",
   "license": "MIT",
   "main": "./scripts/dsh-default-overrides.mjs",
@@ -20,7 +20,7 @@
     "dsh-plugin",
     "deepseek-harness",
     "system-prompt",
-    "persona"
+    "tools"
   ],
   "publishConfig": {
     "access": "public"

@@ -6,24 +6,11 @@
       config:
         includeHarnessIdentity: false
         surfaceContext: false
-        personaPresets:
-          - standard
-        persona:
-          prefix: 'You are a helpful software engineer assistant.'
         disabledTools:
           - tool-web
 
 # Retain any other existing inject dependencies on these rows.
 - id: preset-standard
-  inject:
-    - dshDefaultOverridesReady
-- id: preset-ptc
-  inject:
-    - dshDefaultOverridesReady
-- id: preset-cordis
-  inject:
-    - dshDefaultOverridesReady
-- id: preset-minimal
   inject:
     - dshDefaultOverridesReady
 - id: system-prompt

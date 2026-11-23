@@ -1,6 +1,6 @@
 # DSH Default Overrides
 
-为 DeepSeek Harness（DSH）调整系统提示词、助手人设和工具开关。插件只改 DSH 的公开配置项，不接管 Shell，也不修改 DSH 安装文件。
+为 DeepSeek Harness（DSH）调整系统提示词和工具开关。插件只改 DSH 的公开配置项，不接管 Shell，也不修改 DSH 安装文件。
 
 **安装后默认不改变现有行为。** 按需添加配置即可。
 
@@ -9,7 +9,7 @@
 - 已安装并能正常启动 DSH；建议使用自带的 `web` profile。
 - 目标 profile 包含官方 `standard` 预设；`disabledTools` 只作用于这个预设。
 - 安装所需的 `pnpm` 能从 PATH 中找到。
-- 当前验证基线为 macOS、Node.js 26.12.0、DSH 0.2.2-rc.1。其他 DSH 版本的兼容性需要实际确认。
+- 当前验证基线为 macOS、Node.js 26.13.1、DSH 0.2.3-alpha.2。其他 DSH 版本的兼容性需要实际确认。
 
 ## 安装
 
@@ -38,12 +38,6 @@ dsh plugin --profile web add dsh-default-overrides
   config:
     includeHarnessIdentity: false
     surfaceContext: false
-    personaPresets:
-      - standard
-    persona:
-      prefix: |
-        你是一名软件工程师。先核对项目现状，再做必要的修改。
-        使用中文回答，明确说明验证结果和未验证的部分。
     disabledTools:
       - tool-web
       - tool-workflow
@@ -55,31 +49,9 @@ dsh plugin --profile web add dsh-default-overrides
 
 | 选项 | 默认值 | 说明 |
 |---|---|---|
-| `reverseProxyMode` | 未设置 | `true` 时按反向代理场景套用其余配置项的默认值，显式配置优先 |
 | `includeHarnessIdentity` | 未设置 | 保留 DSH 当前设置；`false` 隐藏框架身份提示句 |
 | `surfaceContext` | 未设置 | 保留 DSH 当前设置；`false` 关闭 Web 表层提示段与 `DSH_WEB_URL` |
-| `persona` | 未设置 | 不设置时保留原有人设 |
-| `personaPresets` | `['standard']` | 接受人设覆盖的预设名单；仅在配置 `persona` 时生效 |
 | `disabledTools` | `[]` | 禁用 `standard` 中指定的配置 ID |
-
-### 反向代理模式
-
-`reverseProxyMode: true` 面向 DSH 经反向代理或 API 网关转发的场景：当其他配置项没有显式写出时，自动套用以下默认值：
-
-```yaml
-- id: dsh-default-overrides
-  config:
-    reverseProxyMode: true
-```
-
-| 配置项 | 反代模式默认值 | 作用 |
-|---|---|---|
-| `includeHarnessIdentity` | `false` | 隐藏 DSH 框架身份提示句 |
-| `surfaceContext` | `false` | 关闭 Web 表层提示段与 `DSH_WEB_URL` |
-| `disabledTools` | `[]` | 不额外禁用任何工具 |
-
-显式写出的配置项优先于反代模式默认值。`persona` 没有通用默认值，反代模式不会改写人设。
-
 
 ### 身份提示与环境说明
 
@@ -94,36 +66,6 @@ dsh plugin --profile web add dsh-default-overrides
 
 `surfaceContext: false` 关闭 Web 表层提示：系统提示词里不再出现 DSH 实现源码 checkout 的路径说明和 Web GUI 的定位说明，shell 命令也不再收到 `DSH_WEB_URL`。它只影响这两段文本和这个变量，不影响 Web 界面本身的启动、URL 打印或浏览器打开；没有 Web 界面的 profile（例如 headless）本来就没有这两段。
 
-### 设置助手人设
-
-下面的配置将同一人设应用于 `standard`、`ptc` 和 `cordis`：
-
-```yaml
-- id: dsh-default-overrides
-  config:
-    personaPresets:
-      - standard
-      - ptc
-      - cordis
-    persona:
-      prefix: |
-        你是一名软件工程师。先核对项目现状，再做必要的修改。
-        使用中文回答，明确说明验证结果和未验证的部分。
-```
-
-省略 `personaPresets` 时只修改 `standard`；写 `[]` 可停用人设覆盖而保留正文。
-
-`persona` 可用字段：
-
-| 字段 | 默认行为 | 用途 |
-|---|---|---|
-| `prefix` | 保留原值 | 助手身份与工作方式说明 |
-| `suffix` | 保留原值 | 人设后缀；DSH 通常在这里提供工作目录 |
-| `complete` | `false` | `true` 时将 `prefix` 作为整个系统提示词，省略其他提示段 |
-| `includeRuntimeContext` | `true` | 是否提供该助手的运行时上下文 |
-
-一般只需要设置 `prefix`。文本中的 `{{...}}` 会被当作 DSH 变量，变量不存在时会报错。`minimal` 原本采用精简提示词；将它加入名单前，应明确设置想保留的 `complete` 和 `includeRuntimeContext` 行为。
-
 ### 禁用指定工具
 
 ```yaml
@@ -135,6 +77,10 @@ dsh plugin --profile web add dsh-default-overrides
 ```
 
 只影响 `standard` 预设。这里填写的是预设中的配置 ID，不是界面显示名称；常见 ID 还有 `tool-ralph`、`skill-filesystem`，实际可用项随 DSH 版本而定。ID 不存在时会明确报错；写 `[]` 或省略该项即可保留全部工具。
+
+## 从 0.9.x 升级到 0.10.0
+
+0.10.0 移除了 `reverseProxyMode`、`persona` 和 `personaPresets`：插件不再套用反向代理场景默认值，也不再覆盖助手人设。配置中保留这些字段会得到明确的启动错误，请删除它们；系统提示词和工具开关的其余配置不变。
 
 ## 从 0.8.x 升级
 
@@ -152,9 +98,8 @@ dsh plugin --profile web add dsh-default-overrides
 |---|---|
 | 修改配置后没有变化 | 确认修改的是正在使用的 profile，完整重启 DSH 并新建会话 |
 | 升级到 0.7.0 后插件报 Shell 选项已移除 | 删除 `shellMode`、`bashPath`、`pwshPath`、`timeoutMs`、`envContext`、`normalizeWindowsPaths` 等旧字段；Shell 由 DSH 官方通道提供 |
-| 人设没有生效 | 检查当前预设是否在 `personaPresets` 中 |
-| 同时安装 billion-context 等会写 preset inject 的插件后人设仍不生效 | DSH 的 bundle patch 会整体替换 preset 行上的 `inject`，后安装的 bundle 可能覆盖 `dshDefaultOverridesReady`；0.9.1 起运行时会自动重刷未拿到该信号的预设。若仍不生效，在 profile 的 `cordis.patch.yml` 末尾按 `examples/cordis.patch.yml` 给四个 preset 行追加 `inject: [biliBasicCompactionPolicy, dshDefaultOverridesReady]`（保留对方原有依赖） |
-| 系统提示词里仍有 checkout 路径或 GUI 说明 | 用 `surfaceContext: false` 关闭；0.9.2 起还会在 `systemPrompt.assemble` 层过滤，即使 profile HMR 重新启用 `harness-dev-context` 也不会输出这两段。固定开场白 `You are an AI agent powered by DeepSeek Harness.` 由 `includeHarnessIdentity` 控制 |
+| 同时安装 billion-context 等会写 preset inject 的插件后禁用工具仍不生效 | DSH 的 bundle patch 会整体替换 preset 行上的 `inject`，后安装的 bundle 可能覆盖 `dshDefaultOverridesReady`；0.9.1 起运行时会自动重刷未拿到该信号的 `preset-standard`。若仍不生效，在 profile 的 `cordis.patch.yml` 末尾按 `examples/cordis.patch.yml` 给 `preset-standard` 行追加 `inject: [biliBasicCompactionPolicy, dshDefaultOverridesReady]`（保留对方原有依赖） |
+| 系统提示词里仍有 checkout 路径或 GUI 说明 | 用 `surfaceContext: false` 关闭；0.9.2 起还会在 `systemPrompt.assemble` 层过滤，即使 profile HMR 重新启用 `harness-dev-context` 也不会输出这两段。固定开场白 `You are an AI agent, powered by DeepSeek Harness.` 由 `includeHarnessIdentity` 控制 |
 | 禁用工具时报 ID 不存在 | 按当前 DSH 版本核对配置 ID，或先删除该项恢复启动 |
 
 ## 更新与卸载
