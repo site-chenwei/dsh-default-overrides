@@ -6,6 +6,9 @@
       config:
         includeHarnessIdentity: false
         surfaceContext: false
+        extraSystemPrompt: |
+          Batch independent read, glob, and grep tool calls in parallel.
+          Prefer dedicated tools over bash unless running builds, tests, or git.
         disabledTools:
           - tool-web
 

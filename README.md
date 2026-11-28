@@ -38,6 +38,9 @@ dsh plugin --profile web add dsh-default-overrides
   config:
     includeHarnessIdentity: false
     surfaceContext: false
+    extraSystemPrompt: |
+      Batch independent read, glob, and grep tool calls in parallel.
+      Prefer dedicated tools over bash unless running builds, tests, or git.
     disabledTools:
       - tool-web
       - tool-workflow
@@ -51,6 +54,7 @@ dsh plugin --profile web add dsh-default-overrides
 |---|---|---|
 | `includeHarnessIdentity` | 未设置 | 保留 DSH 当前设置；`false` 隐藏框架身份提示句 |
 | `surfaceContext` | 未设置 | 保留 DSH 当前设置；`false` 关闭 Web 表层提示段与 `DSH_WEB_URL` |
+| `extraSystemPrompt` | 未设置 | 在身份提示之后、工具说明之前追加自定义系统提示段 |
 | `disabledTools` | `[]` | 禁用 `standard` 中指定的配置 ID |
 
 ### 身份提示与环境说明
@@ -65,6 +69,18 @@ dsh plugin --profile web add dsh-default-overrides
 `includeHarnessIdentity: false` 隐藏 DSH 提供的框架身份提示句，影响整个 profile；不会更换所用模型或 API。
 
 `surfaceContext: false` 关闭 Web 表层提示：系统提示词里不再出现 DSH 实现源码 checkout 的路径说明和 Web GUI 的定位说明，shell 命令也不再收到 `DSH_WEB_URL`。它只影响这两段文本和这个变量，不影响 Web 界面本身的启动、URL 打印或浏览器打开；没有 Web 界面的 profile（例如 headless）本来就没有这两段。
+
+### 追加系统提示段
+
+```yaml
+- id: dsh-default-overrides
+  config:
+    extraSystemPrompt: |
+      Batch independent read, glob, and grep tool calls in parallel.
+      Prefer dedicated tools over bash unless running builds, tests, or git.
+```
+
+`extraSystemPrompt` 在全局 `systemPrompt` 中以 `order: 200` 注入这段自定义文本，位于身份声明之后、工具说明之前，对整个 profile（含 `standard`、`ptc`、`cordis` 与子代理）生效；`minimal` 预设因自身使用完整替换提示词而不受影响。文本按字面量渲染，其中的 `{{...}}` 不会触发变量插值；留空或仅含空白时不注入。
 
 ### 禁用指定工具
 

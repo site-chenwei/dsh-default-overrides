@@ -6,6 +6,10 @@
     includeHarnessIdentity: false
     # Hide the Web surface prompts (harness:source, app:web-surface) and DSH_WEB_URL.
     surfaceContext: false
+    # Optional custom system prompt section injected globally at order 200 (after persona prefix, before tools).
+    extraSystemPrompt: |
+      Batch independent read, glob, and grep tool calls in parallel.
+      Prefer dedicated tools over bash unless running builds, tests, or git.
     # Standard preset row ids to disable; omit the key to keep every shipped row.
     disabledTools:
       - tool-web

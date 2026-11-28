@@ -76,10 +76,14 @@ async function runtime(config, options = {}) {
     await root.plugin(modules['dsh-tools'].default);
     await root.plugin(modules['dsh-tool-executor-native']);
     await root.plugin(modules['dsh-agent-preset-registry'].default, { default: 'standard' });
-    const declaration = options.readyInject === false ? structuredClone(standard) : withReady(standard);
-    declaration.config.plugins = [];
+    const presetSource = options.preset === 'minimal' ? minimal : standard;
+    const presetId = presetSource.config.id;
+    const declaration = options.readyInject === false ? structuredClone(presetSource) : withReady(presetSource);
+    declaration.config.plugins = options.preset === 'minimal'
+      ? minimal.config.plugins.filter(row => row.id === 'persona')
+      : [];
     const rows = [
-      { id: 'system-prompt', name: '@deepseek-ai/dsh-system-prompt', config: { personaPrefix: '' }, inject: ['dshDefaultOverridesReady'] },
+      { id: 'system-prompt', name: '@deepseek-ai/dsh-system-prompt', config: { personaPrefix: options.personaPrefix ?? '' }, inject: ['dshDefaultOverridesReady'] },
       declaration,
       overrideRow(config),
     ];
@@ -109,7 +113,7 @@ async function runtime(config, options = {}) {
     };
     const scope = scopeModule.createScope(root, agent);
     agent.ctx = scope.ctx;
-    await root.agentPresets.mount(scope.ctx, 'standard');
+    await root.agentPresets.mount(scope.ctx, presetId);
     root.agents.register(agent);
     return {
       root,
@@ -129,6 +133,9 @@ try {
     [{ disabledTools: ['tool-missing'] }, /not a row of the standard preset/],
     [{ includeHarnessIdentity: 'no' }, /includeHarnessIdentity must be a boolean/],
     [{ surfaceContext: 'no' }, /surfaceContext must be a boolean/],
+    [{ extraSystemPrompt: 42 }, /extraSystemPrompt must be a string/],
+    [{ extraSystemPrompt: ['line'] }, /extraSystemPrompt must be a string/],
+    [{ extraSystemPrompt: { text: 'line' } }, /extraSystemPrompt must be a string/],
     [{ autoCompaction: false }, /autoCompaction was removed in 0\.9\.0/],
     [{ reverseProxyMode: true }, /reverseProxyMode was removed in 0\.10\.0/],
     [{ persona: { prefix: 'text' } }, /persona was removed in 0\.10\.0/],
@@ -190,6 +197,52 @@ try {
   } finally { await webHidden.dispose(); }
   assert.equal(shownSurface, true, 'surfaceContext true must reach the web-runtime entry');
   console.log('PASS: surfaceContext toggles only the two Web surface sections');
+
+  // extraSystemPrompt 注入全局提示段（order: 200、不插值），空白不注册，minimal 不受影响。
+  const EXTRA_SECTION = 'dsh-default-overrides:extra-system-prompt';
+  for (const blank of ['', '  \n\t ']) {
+    const emptyPromptRuntime = await runtime({ extraSystemPrompt: blank });
+    try {
+      const assembly = await emptyPromptRuntime.assemble();
+      assert.equal(assembly.sections.some(section => section.name === EXTRA_SECTION), false, 'blank extraSystemPrompt must not register a section');
+    } finally { await emptyPromptRuntime.dispose(); }
+  }
+  const extraRuntime = await runtime(
+    { extraSystemPrompt: '\n  Batch calls in parallel. Keep {{literal_token}} intact.\n' },
+    { personaPrefix: 'Base persona.', webRuntime: {} },
+  );
+  try {
+    const assembly = await extraRuntime.assemble();
+    const extraSection = assembly.sections.find(section => section.name === EXTRA_SECTION);
+    assert(extraSection, 'non-empty extraSystemPrompt must register its section');
+    assert.equal(extraSection.order, 200);
+    const names = assembly.sections.map(section => section.name);
+    assert(names.indexOf('deployment:persona-prefix') < names.indexOf(EXTRA_SECTION));
+    assert(names.indexOf(EXTRA_SECTION) < names.indexOf('harness:source'));
+    const prompt = modules['dsh-system-prompt'].renderPrompt(assembly);
+    assert(prompt.includes('Batch calls in parallel. Keep {{literal_token}} intact.'));
+
+    await extraRuntime.root.loader.update('dsh-default-overrides', { config: { extraSystemPrompt: 'Updated discipline.' } });
+    await settle(extraRuntime.root);
+    const updatedPrompt = modules['dsh-system-prompt'].renderPrompt(await extraRuntime.assemble());
+    assert(updatedPrompt.includes('Updated discipline.'));
+    assert(!updatedPrompt.includes('Batch calls in parallel.'));
+
+    await extraRuntime.root.loader.update('dsh-default-overrides', { config: { extraSystemPrompt: '   ' } });
+    await settle(extraRuntime.root);
+    const clearedAssembly = await extraRuntime.assemble();
+    assert.equal(clearedAssembly.sections.some(section => section.name === EXTRA_SECTION), false);
+    assert(!modules['dsh-system-prompt'].renderPrompt(clearedAssembly).includes('Updated discipline.'));
+  } finally { await extraRuntime.dispose(); }
+  const minimalRuntime = await runtime(
+    { extraSystemPrompt: 'Should not appear in minimal.' },
+    { preset: 'minimal' },
+  );
+  try {
+    const prompt = modules['dsh-system-prompt'].renderPrompt(await minimalRuntime.assemble());
+    assert.equal(prompt, 'You are a helpful software engineer assistant.');
+  } finally { await minimalRuntime.dispose(); }
+  console.log('PASS: extraSystemPrompt injects literal section at order 200 and updates cleanly');
 
   // 预设行没等待 ready（被后安装的 bundle 覆盖 inject）时，运行时会补一次刷新。
   await registeredPreset({ disabledTools: ['tool-web'] }, standard, async (root, received) => {

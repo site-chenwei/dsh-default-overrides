@@ -48,7 +48,7 @@
 **升级时写清版本号。** 安装走 pnpm，而 pnpm 从 11 起默认开启发布冷却期（`minimumReleaseAge`，1440 分钟）：版本发布后 24 小时内不参与解析。所以刚发布时用不带版本号的命令，装回来的其实是更早的版本。用固定版本安装，并确认实际装的版本：
 
 ```sh
-dsh plugin --profile <profile> add dsh-default-overrides@0.10.0
+dsh plugin --profile <profile> add dsh-default-overrides@0.11.0
 cat ~/.dsh/profiles/<profile>/node_modules/dsh-default-overrides/package.json | grep '"version"'
 ```
 

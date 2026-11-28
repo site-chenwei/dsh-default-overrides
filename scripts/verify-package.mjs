@@ -53,7 +53,7 @@ try {
 
   // Exercise the documented user layer, then inspect the real DSH composition.
   writeFileSync(join(profileDir, 'cordis.patch.yml'), JSON.stringify([
-    { id: 'dsh-default-overrides', config: { includeHarnessIdentity: false, surfaceContext: false, disabledTools: ['tool-web'] } },
+    { id: 'dsh-default-overrides', config: { includeHarnessIdentity: false, surfaceContext: false, extraSystemPrompt: 'Batch independent tool calls.', disabledTools: ['tool-web'] } },
   ]));
   const profile = boot.loadProfileDirectory('dsh', profileDir, installAnchor);
   assert(profile.layers.some(layer => layer.packageName === manifest.name), 'bundle passes host compatibility and patch loading');
@@ -65,7 +65,7 @@ try {
   assert(entries.find(row => row.id === 'system-prompt').inject?.includes('dshDefaultOverridesReady'), 'the bundle patch must gate the global system-prompt row');
   assert.equal(entries.filter(row => row.id === entry.id).length, 1);
   assert.equal(entry.name, manifest.name);
-  assert.deepEqual(entry.config, { includeHarnessIdentity: false, surfaceContext: false, disabledTools: ['tool-web'] });
+  assert.deepEqual(entry.config, { includeHarnessIdentity: false, surfaceContext: false, extraSystemPrompt: 'Batch independent tool calls.', disabledTools: ['tool-web'] });
   assert(standard.inject.includes('dshDefaultOverridesReady'));
   const webRuntime = entries.find(row => row.id === 'web-runtime');
   assert(webRuntime, 'the shipped web profile must declare web-runtime');

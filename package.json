@@ -1,6 +1,6 @@
 {
   "name": "dsh-default-overrides",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "System prompt and tool overrides for the DSH standard preset.",
   "type": "module",
   "license": "MIT",

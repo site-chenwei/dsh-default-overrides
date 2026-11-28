@@ -6,6 +6,8 @@ export const inject = ['loader', 'agentPresets'];
 const REMOVED_OPTIONS = ['shellMode', 'shellPath', 'bashPath', 'pwshPath', 'timeoutMs', 'envContext', 'normalizeWindowsPaths', 'blockNestedShells'];
 // 0.10.0 移除了反代默认值与 persona 覆盖；保留旧字段时明确报错，避免配置静默失效。
 const REMOVED_0_10_OPTIONS = ['reverseProxyMode', 'persona', 'personaPresets'];
+const EXTRA_PROMPT_SECTION = 'dsh-default-overrides:extra-system-prompt';
+const EXTRA_PROMPT_ORDER = 200;
 
 /** 拍平预设行，group 行自身也在结果中。 */
 function flattenRows(rows) {
@@ -48,6 +50,12 @@ export async function apply(ctx, options = {}) {
   if (surfaceContext !== undefined && typeof surfaceContext !== 'boolean') {
     throw new Error('dsh-default-overrides: surfaceContext must be a boolean');
   }
+  // Note: 额外系统提示段由配置传入并注册到全局 systemPrompt — 见 .agents/notes/implemented/feature/2026-11-28-configurable-extra-system-prompt.md。
+  const extraSystemPrompt = options.extraSystemPrompt;
+  if (extraSystemPrompt !== undefined && typeof extraSystemPrompt !== 'string') {
+    throw new Error('dsh-default-overrides: extraSystemPrompt must be a string');
+  }
+  const trimmedExtraPrompt = extraSystemPrompt?.trim() ?? '';
 
   const [{ default: AgentPreset }, { applyEntryPatches }, { default: SystemPrompt }] = await Promise.all([
     ctx.loader.import('@deepseek-ai/dsh-agent-preset'),
@@ -133,9 +141,18 @@ export async function apply(ctx, options = {}) {
   ctx.provide('dshDefaultOverridesReady', true);
 
   // system-prompt 自身注入 dshDefaultOverridesReady，不能放进本插件的 inject（会形成循环）。
-  // 等它可用后再安装 assemble 过滤器，覆盖 HMR 恢复 harness-dev-context 的情况。
+  // 等它可用后再安装 assemble 过滤器，覆盖 HMR 恢复 harness-dev-context 的情况，并按需注册额外系统提示段。
   ctx.inject(['systemPrompt'], (spCtx) => {
     installSurfaceSuppressor(spCtx.systemPrompt);
+    if (trimmedExtraPrompt.length > 0) {
+      spCtx.systemPrompt.section({
+        name: EXTRA_PROMPT_SECTION,
+        order: EXTRA_PROMPT_ORDER,
+        interpolate: false,
+        text: trimmedExtraPrompt,
+        retirement: `The instructions from ${EXTRA_PROMPT_SECTION} no longer apply.`,
+      });
+    }
   });
 
   // 兜底：bundle 补丁按顺序整体替换 inject，后安装的插件可能覆盖掉预设行上的 ready 信号，
